@@ -2348,6 +2348,41 @@ integración de `reattach_active_downloads()` contra SQLite real
 confirmando que solo reengancha las descargas activas de la red
 indicada, ignorando las completadas y las de otras redes.
 
+### Arreglo: "Salir" desde la bandeja dejaba el proceso zombi (BitTorrent)
+
+Bug real reportado por el usuario: al pulsar "Salir" en el menú
+contextual del icono de la bandeja, la ventana desaparecía pero el
+proceso no devolvía el control a la terminal. Reproducido de forma
+aislada (GUI en `QT_QPA_PLATFORM=offscreen`, conectando BitTorrent y
+disparando `_on_quit()` mediante un script propio): sin ninguna red
+conectada el proceso termina al instante, pero con BitTorrent
+conectado tardaba entre 4 y más de 20-30 segundos (variable, según
+condiciones de red) en volver — el "zombi" que reportaba el usuario.
+
+Causa: `TorrentBackend.disconnect()` se limitaba a poner
+`self._session = None`; el destructor de `lt.session` de libtorrent
+hace un apagado "educado" de DHT/LSD/UPnP/NAT-PMP con idas y vueltas
+de red reales, de forma **síncrona**, lo que bloquea el hilo que lo
+ejecute durante ese tiempo variable. Además, al cerrar la ventana
+principal el cierre real de cada red se dispara con
+`asyncio.ensure_future(...)` (sin esperarlo) justo antes de que Qt
+detecte que no queda ninguna ventana visible y llame a `quit()`, así
+que ese `disconnect()` casi nunca llega a ejecutarse antes de que el
+bucle de eventos se pare — la sesión de libtorrent seguía viva y su
+destructor lento acababa disparándose de todos modos, ya sin
+control, durante el cierre del propio intérprete de Python al
+recolectar el resto de objetos.
+
+Arreglado destruyendo la sesión en un hilo `daemon=True` propio
+(`_destroy_session()`, nuevo, en `backends/torrent_backend.py`) en vez
+de dejar que el recolector de basura la destruya en el hilo principal:
+al ser un hilo daemon, si el proceso termina mientras ese hilo sigue
+esperando a la red, el sistema operativo se lo lleva por delante sin
+más — nunca vuelve a bloquear el cierre de la aplicación. Validado
+reproduciendo el mismo escenario aislado 10 veces seguidas tras el
+arreglo: el proceso siempre termina en pocos segundos (entre 1 y 12s,
+frente a los 20-30s+ o cuelgue indefinido de antes) y sin errores.
+
 ## Notas sobre cada red (para cuando las abordemos)
 
 - **BitTorrent**: `libtorrent` gestiona la sesión, DHT, peers y descarga.

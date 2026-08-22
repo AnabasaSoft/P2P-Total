@@ -23,6 +23,7 @@ import asyncio
 import json
 import os
 import re
+import threading
 import time
 import urllib.parse
 from typing import Callable
@@ -37,6 +38,10 @@ from core.stats_tracker import stats_tracker
 
 _INFOHASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
 _MAGNET_BTIH_RE = re.compile(r"btih:([a-fA-F0-9]{40})", re.IGNORECASE)
+
+
+def _destroy_session(session: "lt.session") -> None:
+    del session
 
 _FILE_PREFIX = "file:"  # prefijo interno para distinguir source_id de archivo .torrent vs magnet
 
@@ -216,10 +221,19 @@ class TorrentBackend(NetworkBackend):
         if self._poll_task:
             self._poll_task.cancel()
             self._poll_task = None
-        if self._session:
-            self._session = None
+        session = self._session
+        self._session = None
         self._active.clear()
         self._pending.clear()
+        if session is not None:
+            # El destructor de `lt.session` hace un apagado "educado" de
+            # DHT/LSD/UPnP/NAT-PMP con idas y vueltas de red que pueden
+            # tardar varios segundos (a veces bastantes más), bloqueando
+            # de forma síncrona el hilo que lo llame. Se destruye en un
+            # hilo daemon aparte para que cerrar la app nunca se quede
+            # esperando a que termine (al morir el proceso, el hilo se
+            # descarta sin más, sin dejarlo "zombi").
+            threading.Thread(target=_destroy_session, args=(session,), daemon=True).start()
 
     async def is_connected(self) -> bool:
         return self._session is not None
