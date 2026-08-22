@@ -1,0 +1,18 @@
+# Core
+PyQt6>=6.6
+qasync>=0.28   # integra el bucle de eventos de Qt con el de asyncio para la GUI
+
+# Backend BitTorrent
+libtorrent>=2.0
+
+# Backend Soulseek: implementación nativa del protocolo (sin librería
+# externa, ver backends/soulseek_backend.py)
+
+# Backend eMule/Kad: implementación nativa del protocolo ed2k + Kademlia
+# sobre sockets estándar (sin dependencia externa, sin aMule ni otros
+# procesos). Posiblemente se use hashlib (MD4 vía pycryptodome, ya que
+# hashlib no lo trae por defecto en builds recientes de OpenSSL)
+# pycryptodome>=3.20
+
+# Backend DC++ / Gnutella: implementación manual del protocolo
+# sobre sockets asyncio, sin dependencias externas por ahora

@@ -1,0 +1,355 @@
+"""
+Configuración persistente de P2P Total.
+
+Se guarda en ~/.config/p2p-total/config.json (respeta $XDG_CONFIG_HOME
+si está definida). Pensado para ir creciendo: de momento solo lleva las
+credenciales de Soulseek y la carpeta de descargas por defecto, pero
+aquí es donde irán el resto de ajustes del programa (límites de
+velocidad, puertos, credenciales de DC++, etc.) a medida que se añadan
+las demás redes.
+"""
+
+import json
+import os
+import shutil
+import stat
+import sys
+from dataclasses import dataclass, field, asdict
+from pathlib import Path
+
+from core.proxy import ProxyConfig
+
+# Modo portable (punto 25 del backlog): ver `is_portable_mode()` más abajo.
+PORTABLE_DATA_DIRNAME = "p2p-total-data"
+
+
+def _executable_dir() -> Path:
+    if getattr(sys, "frozen", False):  # empaquetado (PyInstaller o similar)
+        return Path(sys.executable).resolve().parent
+    return Path(sys.argv[0]).resolve().parent
+
+
+def _portable_marker_path() -> Path:
+    return _executable_dir() / "portable.marker"
+
+
+def is_portable_mode() -> bool:
+    """Si existe un fichero `portable.marker` junto a `main.py` (o el
+    ejecutable empaquetado), toda la configuración y los datos
+    (config.json, downloads.db, cachés de identidad/servidores/contactos
+    conocidos de eD2k/Kad/G2...) se guardan en una carpeta
+    `p2p-total-data` junto a él en vez de en `~/.config/p2p-total` y
+    `~/.local/share/p2p-manager` — pensado para poder llevar el programa
+    entero (código + datos) en un pendrive sin dejar rastro en el
+    usuario del equipo donde se ejecute. Se activa/desactiva desde la
+    propia GUI (Preferencias → General, ver `enable_portable_mode`/
+    `disable_portable_mode`); el cambio no tiene efecto hasta reiniciar
+    la aplicación, porque estas rutas se calculan una sola vez al
+    arrancar (igual que `CONFIG_PATH`, más abajo)."""
+    return _portable_marker_path().exists()
+
+
+def _config_dir() -> Path:
+    if is_portable_mode():
+        return _executable_dir() / PORTABLE_DATA_DIRNAME
+    xdg = os.environ.get("XDG_CONFIG_HOME")
+    base = Path(xdg) if xdg else Path.home() / ".config"
+    return base / "p2p-total"
+
+
+CONFIG_PATH = _config_dir() / "config.json"
+
+# Nombres de las cachés que también viven en `_config_dir()` (ver
+# backends/emule_backend.py y backends/g2_backend.py) y la ruta clásica
+# de la base de datos (ver core/database.py): se usan solo para copiar
+# los datos ya existentes al activar el modo portable, sin borrar los
+# originales por si se desactiva más tarde.
+_PORTABLE_CACHE_FILENAMES = (
+    "g2_hub_cache.json",
+    "ed2k_server_cache.json",
+    "kad_contacts_cache.json",
+    "ed2k_identity.json",
+    "ed2k_credits.json",
+    "ed2k_friends.json",
+)
+_LEGACY_DB_PATH = Path.home() / ".local" / "share" / "p2p-manager" / "downloads.db"
+
+
+@dataclass
+class TorrentConfig:
+    # A diferencia del resto de campos de búsqueda de esta misma clase,
+    # aquí `search_timeout` cubre tanto la espera de metadatos por DHT
+    # (magnet/infohash/.torrent ya identificado) como el propio GET a
+    # apibay.org (punto 29 del backlog: búsqueda de torrents por
+    # nombre); `max_results` solo aplica a esta segunda, ya que la
+    # resolución DHT siempre devuelve como mucho un resultado.
+    max_results: int = 0      # 0 = ilimitado
+    search_timeout: float = 15.0
+
+
+@dataclass
+class SoulseekConfig:
+    username: str = ""
+    password: str = ""
+    listen_port: int = 2234
+    max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
+    search_timeout: float = 20.0
+
+
+@dataclass
+class DCPPConfig:
+    nickname: str = ""
+    default_hub_host: str = ""
+    default_hub_port: int = 411
+    default_hub_password: str = ""   # vacío = sin contraseña (hub abierto)
+    listen_port: int = 41290  # >1024: los puertos reservados (<1024) necesitan root en Linux
+    max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
+    search_timeout: float = 20.0
+
+    def is_configured(self) -> bool:
+        return bool(self.nickname)
+
+
+@dataclass
+class Gnutella2Config:
+    # Gnutella2 usa hubs, no nodos sueltos — mismo concepto que el
+    # --hub de DC++. Tampoco necesita cuenta.
+    default_hub_host: str = ""
+    default_hub_port: int = 6346
+    listen_port: int = 6346   # puerto fijo para recibir conexiones /PUSH entrantes (reenviable en el router)
+    max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
+    search_timeout: float = 20.0
+
+
+@dataclass
+class EMuleConfig:
+    # eD2k/Kad tampoco necesitan cuenta: el nick es solo el nombre que
+    # ven los demás peers al conectar. El servidor por defecto es
+    # opcional — si no se fija ninguno, se descubre uno automáticamente
+    # vía server.met (igual que hace el eMule real de fábrica).
+    nickname: str = "P2PTotalUser"
+    default_server_host: str = ""
+    default_server_port: int = 4661
+    listen_port: int = 4662       # puerto TCP cliente-a-cliente (el "de libro" de eMule)
+    kad_udp_port: int = 4672      # puerto UDP Kad (el "de libro" de eMule)
+    max_results: int = 0          # 0 = ilimitado (solo lo limita search_timeout)
+    search_timeout: float = 20.0
+    # Ofuscación de protocolo (punto 20 del backlog, ver backends/emule_backend.py):
+    # "disabled" = nunca la ofrecemos ni la aceptamos; "enabled" = la
+    # soportamos y preferimos pero seguimos aceptando conexiones sin
+    # ofuscar (por defecto, igual que el eMule real de fábrica);
+    # "required" = rechazamos cualquier conexión entrante que no venga
+    # ofuscada (puede romper la ruta de "callback" para fuentes LowID
+    # si el otro lado no tiene ya en caché nuestro userhash).
+    obfuscation: str = "enabled"
+
+
+@dataclass
+class UIConfig:
+    # Preferencias de la GUI. "dark" es el valor por defecto porque el
+    # estilo buscado (aMule/Shareaza) es tradicionalmente oscuro.
+    theme: str = "dark"           # "dark" | "light"
+    language: str = "es"          # "es" | "en" | "eu"
+    window_width: int = 1100
+    window_height: int = 680
+    window_x: int | None = None   # None = sin guardar todavía, deja que el
+    window_y: int | None = None   # gestor de ventanas decida la posición inicial
+    minimize_to_tray: bool = False  # al cerrar la ventana, minimizar al icono de
+                                     # la bandeja del sistema en vez de salir del todo
+    minimize_to_tray_on_minimize: bool = False  # también al pulsar el botón de
+                                                 # minimizar de la ventana (no solo al cerrarla)
+    notify_on_download_finish: bool = True  # aviso nativo del sistema al completar
+                                             # o fallar una descarga (vía el icono
+                                             # de la bandeja, si hay uno disponible)
+
+
+@dataclass
+class Category:
+    """Categoría de descarga al estilo aMule/qBittorrent: un nombre
+    ("Música", "Vídeos"...) con su propia carpeta de destino asociada,
+    que se usa en vez de `default_download_dir` cuando la descarga se
+    arranca eligiendo esa categoría."""
+    name: str
+    dest_dir: str
+
+
+@dataclass
+class Config:
+    torrent: TorrentConfig = field(default_factory=TorrentConfig)
+    soulseek: SoulseekConfig = field(default_factory=SoulseekConfig)
+    dcpp: DCPPConfig = field(default_factory=DCPPConfig)
+    gnutella2: Gnutella2Config = field(default_factory=Gnutella2Config)
+    emule: EMuleConfig = field(default_factory=EMuleConfig)
+    ui: UIConfig = field(default_factory=UIConfig)
+    proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    default_download_dir: str = str(Path.home() / "Descargas" / "P2P-Total")
+    shared_folders: list[str] = field(default_factory=list)   # vacía = no se comparte nada (ver core/sharing.py)
+    global_download_limit_kbps: int = 0   # 0 = ilimitado; aplica a la suma de todas las redes/descargas
+    global_upload_limit_kbps: int = 0     # 0 = ilimitado; aplica a la suma de todas las subidas servidas
+    categories: list[Category] = field(default_factory=list)  # vacía = sin categorías configuradas
+    auto_retry_max_attempts: int = 3      # 0 = desactivado; reintentos automáticos cuando una descarga cae en error
+    auto_retry_delay_seconds: float = 30.0  # espera entre el error y cada reintento automático
+    watched_torrent_dir: str = ""         # vacío = desactivado (punto 26 del backlog, ver core/watch_folder.py)
+    auto_verify_on_complete: bool = False  # verificar automáticamente el contenido al completar una descarga (punto 27), solo redes que lo soporten
+
+    def is_soulseek_configured(self) -> bool:
+        return bool(self.soulseek.username and self.soulseek.password)
+
+
+def load_config(path: Path | None = None) -> Config:
+    """`path`, si se indica, permite leer un `config.json` de cualquier
+    otra ubicación en vez del real (usado por la importación de
+    configuración desde la GUI, punto 25 del backlog)."""
+    path = path or CONFIG_PATH
+    if not path.exists():
+        return Config()
+
+    with open(path, "r", encoding="utf-8") as f:
+        data = json.load(f)
+
+    torrent_data = data.get("torrent", {})     # {} si es de antes de añadir la búsqueda por nombre (punto 29)
+    soulseek_data = data.get("soulseek", {})
+    dcpp_data = data.get("dcpp", {})           # {} si el config.json es de antes de añadir DC++
+    gnutella2_data = data.get("gnutella2", {}) # {} si es de antes de añadir Gnutella2
+    emule_data = data.get("emule", {})         # {} si es de antes de añadir eMule
+    ui_data = data.get("ui", {})                 # {} si es de antes de añadir la GUI
+    proxy_data = data.get("proxy", {})           # {} si es de antes de añadir el soporte de proxy
+    return Config(
+        torrent=TorrentConfig(
+            max_results=torrent_data.get("max_results", 0),
+            search_timeout=torrent_data.get("search_timeout", 15.0),
+        ),
+        soulseek=SoulseekConfig(
+            username=soulseek_data.get("username", ""),
+            password=soulseek_data.get("password", ""),
+            listen_port=soulseek_data.get("listen_port", 2234),
+            max_results=soulseek_data.get("max_results", 0),
+            search_timeout=soulseek_data.get("search_timeout", 20.0),
+        ),
+        dcpp=DCPPConfig(
+            nickname=dcpp_data.get("nickname", ""),
+            default_hub_host=dcpp_data.get("default_hub_host", ""),
+            default_hub_port=dcpp_data.get("default_hub_port", 411),
+            default_hub_password=dcpp_data.get("default_hub_password", ""),
+            listen_port=dcpp_data.get("listen_port", 41290),
+            max_results=dcpp_data.get("max_results", 0),
+            search_timeout=dcpp_data.get("search_timeout", 20.0),
+        ),
+        gnutella2=Gnutella2Config(
+            default_hub_host=gnutella2_data.get("default_hub_host", ""),
+            default_hub_port=gnutella2_data.get("default_hub_port", 6346),
+            listen_port=gnutella2_data.get("listen_port", 6346),
+            max_results=gnutella2_data.get("max_results", 0),
+            search_timeout=gnutella2_data.get("search_timeout", 20.0),
+        ),
+        emule=EMuleConfig(
+            nickname=emule_data.get("nickname", "P2PTotalUser"),
+            default_server_host=emule_data.get("default_server_host", ""),
+            default_server_port=emule_data.get("default_server_port", 4661),
+            listen_port=emule_data.get("listen_port", 4662),
+            kad_udp_port=emule_data.get("kad_udp_port", 4672),
+            max_results=emule_data.get("max_results", 0),
+            search_timeout=emule_data.get("search_timeout", 20.0),
+            obfuscation=emule_data.get("obfuscation", "enabled"),
+        ),
+        ui=UIConfig(
+            theme=ui_data.get("theme", "dark"),
+            language=ui_data.get("language", "es"),
+            window_width=ui_data.get("window_width", 1100),
+            window_height=ui_data.get("window_height", 680),
+            window_x=ui_data.get("window_x"),
+            window_y=ui_data.get("window_y"),
+            minimize_to_tray=ui_data.get("minimize_to_tray", False),
+            minimize_to_tray_on_minimize=ui_data.get("minimize_to_tray_on_minimize", False),
+            notify_on_download_finish=ui_data.get("notify_on_download_finish", True),
+        ),
+        proxy=ProxyConfig(
+            enabled=proxy_data.get("enabled", False),
+            kind=proxy_data.get("kind", "socks5"),
+            host=proxy_data.get("host", ""),
+            port=proxy_data.get("port", 1080),
+            username=proxy_data.get("username", ""),
+            password=proxy_data.get("password", ""),
+        ),
+        default_download_dir=data.get("default_download_dir", Config().default_download_dir),
+        # "shared_folder" (str) es el nombre del campo antes de admitir
+        # varias carpetas a la vez; se migra a la lista nueva si es lo
+        # único que hay en un config.json guardado por una versión previa.
+        shared_folders=data.get("shared_folders") or ([data["shared_folder"]] if data.get("shared_folder") else []),
+        global_download_limit_kbps=data.get("global_download_limit_kbps", 0),
+        global_upload_limit_kbps=data.get("global_upload_limit_kbps", 0),
+        categories=[Category(name=c["name"], dest_dir=c["dest_dir"]) for c in data.get("categories", [])],
+        auto_retry_max_attempts=data.get("auto_retry_max_attempts", 3),
+        auto_retry_delay_seconds=data.get("auto_retry_delay_seconds", 30.0),
+        watched_torrent_dir=data.get("watched_torrent_dir", ""),
+        auto_verify_on_complete=data.get("auto_verify_on_complete", False),
+    )
+
+
+def save_config(config: Config, path: Path | None = None) -> None:
+    """`path`, si se indica, exporta a cualquier otra ubicación en vez de
+    la real (usado por la exportación de configuración desde la GUI,
+    punto 25 del backlog)."""
+    path = path or CONFIG_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    data = {
+        "torrent": asdict(config.torrent),
+        "soulseek": asdict(config.soulseek),
+        "dcpp": asdict(config.dcpp),
+        "gnutella2": asdict(config.gnutella2),
+        "emule": asdict(config.emule),
+        "ui": asdict(config.ui),
+        "proxy": asdict(config.proxy),
+        "default_download_dir": config.default_download_dir,
+        "shared_folders": config.shared_folders,
+        "global_download_limit_kbps": config.global_download_limit_kbps,
+        "global_upload_limit_kbps": config.global_upload_limit_kbps,
+        "categories": [asdict(c) for c in config.categories],
+        "auto_retry_max_attempts": config.auto_retry_max_attempts,
+        "auto_retry_delay_seconds": config.auto_retry_delay_seconds,
+        "watched_torrent_dir": config.watched_torrent_dir,
+        "auto_verify_on_complete": config.auto_verify_on_complete,
+    }
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False)
+
+    # El archivo lleva contraseñas en texto plano: que solo lo pueda leer
+    # el propio usuario (equivalente a chmod 600).
+    os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
+
+
+def enable_portable_mode(config: Config) -> None:
+    """Activa el modo portable (punto 25 del backlog, ver
+    `is_portable_mode` más arriba): guarda `config` en la carpeta
+    portable, copia ahí (sin borrar los originales) la base de datos de
+    descargas y las cachés de identidad/servidores/contactos conocidos
+    si ya existían, y por último deja el fichero marcador que hace que,
+    a partir del próximo arranque, tanto `_config_dir()` como
+    `core.database.DB_PATH` apunten a esa carpeta."""
+    old_dir = _config_dir()  # todavía sin marcador: resuelve a la ruta clásica
+    portable_dir = _executable_dir() / PORTABLE_DATA_DIRNAME
+    portable_dir.mkdir(parents=True, exist_ok=True)
+
+    save_config(config, portable_dir / "config.json")
+    for filename in _PORTABLE_CACHE_FILENAMES:
+        src = old_dir / filename
+        if src.exists():
+            shutil.copy2(src, portable_dir / filename)
+    if _LEGACY_DB_PATH.exists():
+        shutil.copy2(_LEGACY_DB_PATH, portable_dir / "downloads.db")
+
+    _portable_marker_path().write_text(
+        "Este fichero activa el modo portable de P2P Total (punto 25 del "
+        "backlog): borralo, o desmarca la opción correspondiente en "
+        "Preferencias -> General, para volver a guardar los datos en "
+        "~/.config/p2p-total y ~/.local/share/p2p-manager.\n",
+        encoding="utf-8",
+    )
+
+
+def disable_portable_mode() -> None:
+    """Desactiva el modo portable borrando el fichero marcador. No borra
+    la carpeta `p2p-total-data`: si se reactiva más tarde, los datos
+    siguen ahí tal cual se dejaron."""
+    _portable_marker_path().unlink(missing_ok=True)

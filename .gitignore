@@ -1,0 +1,31 @@
+# Instrucciones privadas de Claude Code
+CLAUDE.md
+
+# Entorno virtual
+venv/
+.venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# Herramientas / IDE
+.serena/
+.claude/
+.vscode/
+.idea/
+
+# Descargas y datos locales generados en tiempo de ejecución
+*.log
+downloads/
+*.torrent.tmp
+
+# Sistema operativo
+.DS_Store
+Thumbs.db

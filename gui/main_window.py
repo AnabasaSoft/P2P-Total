@@ -1,0 +1,504 @@
+"""Ventana principal: menú (incluida la conexión por red, antes en un
+panel lateral) y pestañas de Búsqueda / Transferencias / Red."""
+
+import asyncio
+from pathlib import Path
+
+from PyQt6.QtCore import QEvent
+from PyQt6.QtGui import QAction, QActionGroup, QIcon
+from PyQt6.QtWidgets import (
+    QApplication, QFileDialog, QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
+    QSystemTrayIcon, QTabWidget,
+)
+
+from backends.dcpp_backend import parse_dchub_link
+from backends.emule_backend import parse_ed2k_link
+from core.backend_base import BackendRegistry
+from core.config import load_config, save_config
+from core.models import Download, DownloadState, Network, SearchResult
+from core.download_manager import DownloadManager
+from core.saved_search_manager import SavedSearchManager
+from core.watch_folder import WatchFolderManager
+from gui import theme
+from gui.connection_manager import STATUS_CONNECTED, STATUS_CONNECTING, ConnectionManager
+from gui.i18n import LANGUAGES, t
+from gui.models_qt import NETWORK_LABEL_KEYS, _format_speed
+from gui.resources import ICON_PATH
+from gui.widgets.about_dialog import AboutDialog
+from gui.widgets.alerts_tab import AlertsTab
+from gui.widgets.chat_tab import ChatTab
+from gui.widgets.downloads_tab import DownloadsTab
+from gui.widgets.emule_friends_dialog import EMuleFriendsDialog
+from gui.widgets.network_tab import NetworkTab
+from gui.widgets.search_tab import SearchTab
+from gui.widgets.settings_dialog import SettingsDialog
+from gui.widgets.stats_tab import StatsTab
+
+
+class MainWindow(QMainWindow):
+    def __init__(self) -> None:
+        super().__init__()
+        self.setWindowTitle(t("app_title"))
+        self.setWindowIcon(QIcon(str(ICON_PATH)))
+        self.setAcceptDrops(True)
+        startup_config = load_config()
+        self.resize(startup_config.ui.window_width, startup_config.ui.window_height)
+        if startup_config.ui.window_x is not None and startup_config.ui.window_y is not None:
+            self.move(startup_config.ui.window_x, startup_config.ui.window_y)
+
+        self._download_manager = DownloadManager()
+        self._connection_manager = ConnectionManager(self._download_manager)
+        self._connection_manager.status_changed.connect(self._on_status_changed_for_networks_menu)
+        self._connection_manager.status_changed.connect(self._on_status_changed_for_statusbar)
+
+        self._saved_search_manager = SavedSearchManager(self._download_manager)
+        self._saved_search_manager.start()
+
+        self._watch_folder_manager = WatchFolderManager(self._download_manager)
+        self._watch_folder_manager.on_added(self._on_watch_folder_added)
+        self._watch_folder_manager.start()
+
+        self._download_manager.on_verify_result(self._on_verify_result)
+
+        self._search_tab = SearchTab(self._download_manager, self._connection_manager, self._saved_search_manager)
+        self._search_tab.download_requested.connect(self._on_download_requested)
+        self._downloads_tab = DownloadsTab(self._download_manager)
+        self._network_tab = NetworkTab(self._connection_manager, self._download_manager)
+        self._network_tab.download_requested.connect(self._on_download_requested)
+        self._alerts_tab = AlertsTab(self._saved_search_manager)
+        self._alerts_tab.download_requested.connect(self._on_download_requested)
+        self._alerts_tab.alerts_changed.connect(self._update_alerts_tab_title)
+        self._chat_tab = ChatTab(self._connection_manager)
+        self._stats_tab = StatsTab(self._connection_manager)
+
+        tabs = QTabWidget()
+        tabs.addTab(self._search_tab, t("tab_search"))
+        tabs.addTab(self._downloads_tab, t("tab_downloads"))
+        tabs.addTab(self._network_tab, t("tab_network"))
+        self._alerts_tab_index = tabs.addTab(self._alerts_tab, t("tab_alerts"))
+        tabs.addTab(self._chat_tab, t("tab_chat"))
+        tabs.addTab(self._stats_tab, t("tab_stats"))
+        self._tabs = tabs
+        self.setCentralWidget(tabs)
+
+        self._build_menu()
+        self.statusBar().showMessage(t("statusbar_ready"))
+        self._transfers_label = QLabel()
+        self.statusBar().addPermanentWidget(self._transfers_label)
+        self._download_manager.on_progress(self._on_progress_for_statusbar)
+
+        self._quitting = False
+        self._build_tray_icon()
+        self._notified_download_ids: set[int] = set()
+        self._download_manager.on_progress(self._on_progress_for_notifications)
+
+    # ---- Menú ----
+
+    def _build_menu(self) -> None:
+        menu_bar = self.menuBar()
+
+        file_menu = menu_bar.addMenu(t("menu_file"))
+        open_link_action = QAction(t("menu_file_open_link"), self)
+        open_link_action.triggered.connect(self._on_open_link)
+        file_menu.addAction(open_link_action)
+        add_torrent_action = QAction(t("menu_file_add_torrent"), self)
+        add_torrent_action.triggered.connect(self._on_add_torrent_file)
+        file_menu.addAction(add_torrent_action)
+        file_menu.addSeparator()
+        settings_action = QAction(t("menu_file_settings"), self)
+        settings_action.triggered.connect(self._on_open_settings)
+        file_menu.addAction(settings_action)
+        file_menu.addSeparator()
+        quit_action = QAction(t("menu_file_quit"), self)
+        quit_action.triggered.connect(self._on_quit)
+        file_menu.addAction(quit_action)
+
+        networks_menu = menu_bar.addMenu(t("menu_networks"))
+        self._network_actions: dict[Network, QAction] = {}
+        for network in Network:
+            action = QAction(t(NETWORK_LABEL_KEYS[network]), self, checkable=True)
+            action.toggled.connect(lambda checked, n=network: self._on_network_toggled(n, checked))
+            self._network_actions[network] = action
+            networks_menu.addAction(action)
+        networks_menu.addSeparator()
+        connect_all_action = QAction(t("menu_networks_connect_all"), self)
+        connect_all_action.triggered.connect(self._on_connect_all)
+        networks_menu.addAction(connect_all_action)
+        disconnect_all_action = QAction(t("menu_networks_disconnect_all"), self)
+        disconnect_all_action.triggered.connect(self._on_disconnect_all)
+        networks_menu.addAction(disconnect_all_action)
+        networks_menu.addSeparator()
+        emule_friends_action = QAction(t("menu_networks_emule_friends"), self)
+        emule_friends_action.triggered.connect(self._on_open_emule_friends)
+        networks_menu.addAction(emule_friends_action)
+
+        view_menu = menu_bar.addMenu(t("menu_view"))
+        theme_group = QActionGroup(self)
+        theme_group.setExclusive(True)
+        dark_action = QAction(t("menu_view_theme_dark"), self, checkable=True)
+        light_action = QAction(t("menu_view_theme_light"), self, checkable=True)
+        current_theme = load_config().ui.theme
+        dark_action.setChecked(current_theme == "dark")
+        light_action.setChecked(current_theme == "light")
+        dark_action.triggered.connect(lambda: self._on_theme_selected("dark"))
+        light_action.triggered.connect(lambda: self._on_theme_selected("light"))
+        theme_group.addAction(dark_action)
+        theme_group.addAction(light_action)
+        view_menu.addAction(dark_action)
+        view_menu.addAction(light_action)
+
+        language_menu = view_menu.addMenu(t("menu_view_language"))
+        language_group = QActionGroup(self)
+        language_group.setExclusive(True)
+        current_language = load_config().ui.language
+        for code, label in LANGUAGES:
+            action = QAction(label, self, checkable=True)
+            action.setChecked(code == current_language)
+            action.triggered.connect(lambda _checked, c=code: self._on_language_selected(c))
+            language_group.addAction(action)
+            language_menu.addAction(action)
+
+        help_menu = menu_bar.addMenu(t("menu_help"))
+        about_action = QAction(t("menu_help_about"), self)
+        about_action.triggered.connect(self._on_about)
+        help_menu.addAction(about_action)
+
+    # ---- Handlers ----
+
+    def _on_open_link(self) -> None:
+        # Punto 12 del backlog: si el portapapeles ya tiene un enlace
+        # reconocido (magnet:/ed2k://dchub://), se precarga en el
+        # campo para que baste con Ctrl+V + Enter.
+        clipboard_text = QApplication.clipboard().text().strip()
+        prefill = clipboard_text if clipboard_text.startswith(("magnet:", "ed2k://", "dchub://")) else ""
+        text, ok = QInputDialog.getText(
+            self, t("dlg_open_link_title"), t("dlg_open_link_label"), text=prefill
+        )
+        if not ok or not text.strip():
+            return
+        self._handle_link(text.strip())
+
+    def _handle_link(self, text: str) -> None:
+        if text.startswith("magnet:"):
+            asyncio.ensure_future(self._add_torrent(text))
+        elif text.startswith("ed2k://"):
+            asyncio.ensure_future(self._add_ed2k_link(text))
+        elif text.startswith("dchub://"):
+            asyncio.ensure_future(self._connect_dchub_link(text))
+        else:
+            QMessageBox.warning(self, t("app_title"), t("msg_unrecognized_link"))
+
+    async def _add_ed2k_link(self, link: str) -> None:
+        parsed = parse_ed2k_link(link)
+        if parsed is None:
+            QMessageBox.warning(self, t("app_title"), t("msg_invalid_ed2k_link"))
+            return
+        title, size, file_hash_hex = parsed
+        backend = BackendRegistry.get(Network.EMULE)
+        if backend is None or not await backend.is_connected():
+            QMessageBox.warning(self, t("app_title"), t("msg_emule_not_connected"))
+            return
+        default_dir = load_config().default_download_dir
+        try:
+            Path(default_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, t("app_title"), t("msg_download_dir_error", dir=default_dir, error=str(exc))
+            )
+            return
+        result = SearchResult(
+            network=Network.EMULE, title=title, size_bytes=size,
+            source_id=f"{file_hash_hex}:::{size}:::{title}",
+        )
+        await self._start_download(result, default_dir)
+
+    async def _connect_dchub_link(self, link: str) -> None:
+        parsed = parse_dchub_link(link)
+        if parsed is None:
+            QMessageBox.warning(self, t("app_title"), t("msg_invalid_dchub_link"))
+            return
+        host, port = parsed
+        if self._connection_manager.is_connected(Network.DCPP):
+            await self._connection_manager.disconnect_network(Network.DCPP)
+        await self._connection_manager.connect_network(Network.DCPP, hub_override=(host, port))
+        self._tabs.setCurrentWidget(self._network_tab)
+
+    def _on_add_torrent_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, t("dlg_add_torrent_title"), "", t("dlg_add_torrent_filter"))
+        if not path:
+            return
+        asyncio.ensure_future(self._add_torrent(path))
+
+    def dragEnterEvent(self, event) -> None:
+        if event.mimeData().hasUrls() and any(
+            url.toLocalFile().lower().endswith(".torrent") for url in event.mimeData().urls()
+        ):
+            event.acceptProposedAction()
+
+    def dropEvent(self, event) -> None:
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path.lower().endswith(".torrent"):
+                asyncio.ensure_future(self._add_torrent(path))
+        event.acceptProposedAction()
+
+    async def _add_torrent(self, query: str) -> None:
+        backend = BackendRegistry.get(Network.TORRENT)
+        if backend is None or not await backend.is_connected():
+            QMessageBox.warning(self, t("app_title"), t("msg_torrent_not_connected"))
+            return
+        default_dir = load_config().default_download_dir
+        try:
+            Path(default_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, t("app_title"), t("msg_download_dir_error", dir=default_dir, error=str(exc))
+            )
+            return
+        try:
+            results = await backend.search(query)
+        except Exception as e:
+            QMessageBox.warning(self, t("app_title"), str(e))
+            return
+        if not results:
+            QMessageBox.warning(self, t("app_title"), t("msg_torrent_no_metadata"))
+            return
+        await self._start_download(results[0], default_dir)
+
+    def _on_network_toggled(self, network: Network, checked: bool) -> None:
+        if checked:
+            asyncio.ensure_future(self._connection_manager.connect_network(network))
+        else:
+            asyncio.ensure_future(self._connection_manager.disconnect_network(network))
+
+    def _on_connect_all(self) -> None:
+        for network in Network:
+            if not self._connection_manager.is_connected(network):
+                asyncio.ensure_future(self._connection_manager.connect_network(network))
+
+    def _on_disconnect_all(self) -> None:
+        for network in Network:
+            if self._connection_manager.is_connected(network):
+                asyncio.ensure_future(self._connection_manager.disconnect_network(network))
+
+    def _on_open_emule_friends(self) -> None:
+        backend = self._connection_manager.get_backend(Network.EMULE)
+        if backend is None:
+            QMessageBox.warning(self, t("app_title"), t("msg_emule_not_connected"))
+            return
+        dialog = EMuleFriendsDialog(backend, self)
+        dialog.exec()
+
+    def _on_status_changed_for_networks_menu(self, network_value: str, status: str, message: str) -> None:
+        network = Network(network_value)
+        action = self._network_actions[network]
+        action.blockSignals(True)
+        action.setChecked(status == STATUS_CONNECTED)
+        action.setEnabled(status != STATUS_CONNECTING)
+        action.setToolTip(message)
+        action.blockSignals(False)
+
+    def _on_status_changed_for_statusbar(self, _network_value: str, _status: str, _message: str) -> None:
+        n_connected = len(self._connection_manager.connected_networks())
+        self.statusBar().showMessage(t("statusbar_connected_count", n=n_connected, total=len(Network)))
+
+    def _on_progress_for_statusbar(self, _download: Download) -> None:
+        n_active = self._downloads_tab.active_count()
+        if n_active == 0:
+            self._transfers_label.clear()
+            return
+        speed = _format_speed(self._downloads_tab.active_speed_bps()) or "0 B/s"
+        self._transfers_label.setText(t("statusbar_transfers", n=n_active, speed=speed))
+
+    def _on_progress_for_notifications(self, download: Download) -> None:
+        # Punto 23 del backlog: aviso nativo del sistema al completar o
+        # fallar una descarga, una sola vez por descarga (no en cada tick
+        # de progreso) y solo si hay un icono de bandeja real disponible.
+        if self._tray_icon is None or download.id is None:
+            return
+        if download.state not in (DownloadState.COMPLETED, DownloadState.ERROR):
+            return
+        if not load_config().ui.notify_on_download_finish:
+            return
+        if download.id in self._notified_download_ids:
+            return
+        self._notified_download_ids.add(download.id)
+        if download.state == DownloadState.COMPLETED:
+            self._tray_icon.showMessage(
+                t("notify_download_completed_title"),
+                t("notify_download_completed_body", title=download.title),
+                QSystemTrayIcon.MessageIcon.Information,
+            )
+        else:
+            self._tray_icon.showMessage(
+                t("notify_download_failed_title"),
+                t("notify_download_failed_body", title=download.title),
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+
+    def _on_watch_folder_added(self, filename: str, download: Download | None, error: Exception | None) -> None:
+        # Punto 26 del backlog: la carpeta vigilada añadió (o intentó
+        # añadir) un .torrent nuevo por su cuenta -- se refleja en la
+        # pestaña Transferencias y se avisa igual que al terminar una
+        # descarga (punto 23), reusando el mismo icono de bandeja.
+        if download is not None:
+            self._downloads_tab.add_download(download)
+        if self._tray_icon is None:
+            return
+        if error is None:
+            self._tray_icon.showMessage(
+                t("notify_watch_folder_title"),
+                t("notify_watch_folder_body", filename=filename),
+                QSystemTrayIcon.MessageIcon.Information,
+            )
+        else:
+            self._tray_icon.showMessage(
+                t("notify_watch_folder_title"),
+                t("notify_watch_folder_error_body", filename=filename, error=str(error)),
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+
+    def _on_verify_result(self, download: Download, is_intact: bool | None, error: Exception | None) -> None:
+        # Punto 27 del backlog: resultado de verificar el contenido ya
+        # descargado, tanto a demanda (menú contextual "Verificar
+        # archivo") como automático al completar si así lo indica
+        # Preferencias -- mismo icono de bandeja que el resto de avisos.
+        if self._tray_icon is None:
+            return
+        if error is not None:
+            self._tray_icon.showMessage(
+                t("notify_verify_title"),
+                t("notify_verify_error_body", filename=download.title, error=str(error)),
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+        elif is_intact:
+            self._tray_icon.showMessage(
+                t("notify_verify_title"),
+                t("notify_verify_ok_body", filename=download.title),
+                QSystemTrayIcon.MessageIcon.Information,
+            )
+        else:
+            self._tray_icon.showMessage(
+                t("notify_verify_title"),
+                t("notify_verify_corrupt_body", filename=download.title),
+                QSystemTrayIcon.MessageIcon.Warning,
+            )
+
+    def _update_alerts_tab_title(self, n_pending: int) -> None:
+        title = t("tab_alerts_with_count", n=n_pending) if n_pending else t("tab_alerts")
+        self._tabs.setTabText(self._alerts_tab_index, title)
+
+    def _on_download_requested(self, result, dest_path: str, category: str | None) -> None:
+        asyncio.ensure_future(self._start_download(result, dest_path, category))
+
+    async def _start_download(self, result, dest_path: str, category: str | None = None) -> None:
+        try:
+            download = await self._download_manager.download(result, dest_path, category)
+        except Exception as e:
+            QMessageBox.warning(self, t("app_title"), str(e))
+            return
+        self._downloads_tab.add_download(download)
+        self._tabs.setCurrentWidget(self._downloads_tab)
+
+    def _on_open_settings(self) -> None:
+        dialog = SettingsDialog(self)
+        if dialog.exec():
+            theme.apply_theme(QApplication.instance(), dialog.selected_theme())
+            self._connection_manager.apply_global_speed_limits()
+
+    def _on_theme_selected(self, theme_name: str) -> None:
+        config = load_config()
+        config.ui.theme = theme_name
+        save_config(config)
+        theme.apply_theme(QApplication.instance(), theme_name)
+
+    def _on_language_selected(self, language_code: str) -> None:
+        config = load_config()
+        if config.ui.language == language_code:
+            return
+        config.ui.language = language_code
+        save_config(config)
+        QMessageBox.information(self, t("app_title"), t("msg_restart_language"))
+
+    def _on_about(self) -> None:
+        AboutDialog(self).exec()
+
+    # ---- Bandeja del sistema (punto 22 del backlog) ----
+
+    def _build_tray_icon(self) -> None:
+        if not QSystemTrayIcon.isSystemTrayAvailable():
+            self._tray_icon = None
+            return
+        self._tray_icon = QSystemTrayIcon(QIcon(str(ICON_PATH)), self)
+        self._tray_icon.setToolTip(t("app_title"))
+        tray_menu = QMenu(self)
+        show_action = QAction(t("menu_tray_show"), self)
+        show_action.triggered.connect(self._restore_from_tray)
+        tray_menu.addAction(show_action)
+        tray_menu.addSeparator()
+        tray_connect_all_action = QAction(t("menu_networks_connect_all"), self)
+        tray_connect_all_action.triggered.connect(self._on_connect_all)
+        tray_menu.addAction(tray_connect_all_action)
+        tray_disconnect_all_action = QAction(t("menu_networks_disconnect_all"), self)
+        tray_disconnect_all_action.triggered.connect(self._on_disconnect_all)
+        tray_menu.addAction(tray_disconnect_all_action)
+        tray_menu.addSeparator()
+        tray_pause_all_action = QAction(t("menu_tray_pause_all"), self)
+        tray_pause_all_action.triggered.connect(self._downloads_tab.pause_all)
+        tray_menu.addAction(tray_pause_all_action)
+        tray_resume_all_action = QAction(t("menu_tray_resume_all"), self)
+        tray_resume_all_action.triggered.connect(self._downloads_tab.resume_all)
+        tray_menu.addAction(tray_resume_all_action)
+        tray_menu.addSeparator()
+        tray_quit_action = QAction(t("menu_tray_quit"), self)
+        tray_quit_action.triggered.connect(self._on_quit)
+        tray_menu.addAction(tray_quit_action)
+        self._tray_icon.setContextMenu(tray_menu)
+        self._tray_icon.activated.connect(self._on_tray_activated)
+        self._tray_icon.show()
+
+    def _on_tray_activated(self, reason: QSystemTrayIcon.ActivationReason) -> None:
+        if reason in (QSystemTrayIcon.ActivationReason.Trigger, QSystemTrayIcon.ActivationReason.DoubleClick):
+            self._restore_from_tray()
+
+    def _restore_from_tray(self) -> None:
+        self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    def _on_quit(self) -> None:
+        self._quitting = True
+        self.close()
+
+    def changeEvent(self, event) -> None:
+        super().changeEvent(event)
+        if (
+            event.type() == QEvent.Type.WindowStateChange
+            and self.isMinimized()
+            and self._tray_icon is not None
+            and load_config().ui.minimize_to_tray_on_minimize
+        ):
+            self.hide()
+            self._tray_icon.showMessage(t("app_title"), t("msg_tray_minimized"), QIcon(str(ICON_PATH)))
+
+    def closeEvent(self, event) -> None:
+        if not self._quitting and self._tray_icon is not None and load_config().ui.minimize_to_tray:
+            event.ignore()
+            self.hide()
+            self._tray_icon.showMessage(t("app_title"), t("msg_tray_minimized"), QIcon(str(ICON_PATH)))
+            return
+
+        config = load_config()
+        config.ui.window_width = self.width()
+        config.ui.window_height = self.height()
+        config.ui.window_x = self.x()
+        config.ui.window_y = self.y()
+        save_config(config)
+
+        self._saved_search_manager.stop()
+        self._watch_folder_manager.stop()
+        for network in self._connection_manager.connected_networks():
+            asyncio.ensure_future(self._connection_manager.disconnect_network(network))
+        if self._tray_icon is not None:
+            self._tray_icon.hide()
+        super().closeEvent(event)
