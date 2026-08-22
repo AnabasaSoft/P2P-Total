@@ -3541,54 +3541,118 @@ búsqueda/descarga; falta la parte social):
           conocida y aceptada mientras no se disponga de un icono
           maestro de mayor resolución o en vectorial (SVG); no bloquea
           ningún empaquetado.
-    33.4. [ ] **Preparar el repositorio para subir a GitHub**: no existe
-          repositorio git todavía (`git status` falla con "no es un
-          repositorio git"), ni `.gitignore`, ni `LICENSE`. La carpeta
-          `venv/` pesa 319 MB y se colaría entera en el primer commit
-          si no se excluye antes. Falta decidir la licencia del
-          proyecto (relevante también porque G2 se estudió del código
-          fuente GPLv2+ de gtk-gnutella sin copiarlo literal, ver
-          "Estado actual" más arriba) y crear el `.gitignore`
-          (`venv/`, `__pycache__/`, `*.db`, `config.json` de pruebas,
-          etc.) antes del primer `git init`/`git add`.
-    33.5. [ ] **Paquete Linux `.deb`/`.rpm`/AppImage**: crear el fichero
-          `.desktop` (con el icono ya arreglado en 33.2/33.3) y el
-          `AppStream metainfo.xml` que piden estos formatos, más el
-          script/spec de empaquetado (`debian/control`+`rules` para
-          `.deb`, `.spec` para `.rpm`, `appimage-builder` o similar para
-          AppImage). Se hace primero por ser el entorno donde todo el
-          proyecto ya se ha validado en vivo (Linux/X11).
-    33.6. [ ] **Flatpak**: manifiesto (`org.anabasasoft.P2PTotal.yml` o
-          similar) reutilizando el `.desktop`/metainfo del punto 33.5,
-          declarando los permisos de sandbox necesarios (red, acceso a
-          la carpeta de descargas del usuario). Requiere que
-          `flatpak-builder` valide el manifiesto y el AppStream sin
-          errores.
-    33.7. [ ] **Riesgo de `libtorrent` en Windows/macOS**: es la
-          dependencia con más riesgo real para esas dos plataformas —
-          no tiene wheels oficiales fiables en PyPI para todas las
-          versiones de Python ahí (históricamente hace falta conda-forge
-          o compilar a mano), a diferencia de Linux donde ya se usa sin
-          problemas. Antes de prometer un instalador de Windows/macOS
-          "de fábrica" hay que probar si `pip install libtorrent`
-          funciona en esas plataformas con la versión de Python elegida
-          para el build; si no, el backend BitTorrent tendrá que quedar
-          como opcional ahí (la app debe poder instalarse y arrancar
-          igualmente sin él, degradando solo esa red).
-    33.8. [ ] **Empaquetado Windows** (`.exe`/instalador): spec de
-          PyInstaller usando ya el `.ico` del punto 33.3 y la
-          resolución de rutas del 33.1; validar que `qasync` + los
-          sockets UDP crudos de G2/eMule-Kad y TCP de Soulseek/DC++
-          funcionan igual sobre el `ProactorEventLoop` de Windows (nunca
-          probado hasta ahora, todo el proyecto se validó solo en
-          Linux). Sin firma de código, Windows SmartScreen avisará de
-          "editor no reconocido" — asumible para una primera versión,
-          pero hay que ser consciente de que ese aviso va a aparecer.
-    33.9. [ ] **Empaquetado macOS** (`.app`/`.dmg`): mismo spec de
-          PyInstaller adaptado, usando el `.icns` del punto 33.3. Sin
-          firma ni notarización de Apple, Gatekeeper bloqueará o avisará
-          al abrir la app — mismo caso que Windows, asumible para una
-          primera versión pero a tener en cuenta.
+    33.4. ✅ **Preparar el repositorio para subir a GitHub**: hecho en su
+          momento (`git init`, `.gitignore` excluyendo `venv/` y demás,
+          repositorio publicado en `github.com/AnabasaSoft/P2P-Total`,
+          ya con varios commits empujados). Quedaba pendiente decidir
+          la licencia — añadido ahora `LICENSE` con el texto oficial
+          íntegro de la GNU GPL v3 (descargado de `gnu.org`, sin
+          modificar), identificador SPDX `GPL-3.0-or-later` usado en el
+          `metainfo.xml` (33.5) y en los metadatos de `fpm` (`.deb`/
+          `.rpm`). Es una elección razonable por defecto del asistente,
+          no una petición explícita del usuario (coherente con el
+          espíritu GPL de gtk-gnutella, estudiado sin copiar para G2) —
+          pendiente de confirmación o cambio por el usuario si prefiere
+          otra licencia.
+    33.5. **Paquete Linux `.deb`/`.rpm`/AppImage**: creados
+          `packaging/linux/p2p-total.desktop` (validado con
+          `desktop-file-validate`, sin errores) y
+          `packaging/linux/org.anabasasoft.P2PTotal.metainfo.xml`
+          (validado con `appstreamcli validate`, sin errores ni
+          advertencias tras corregir `<developer_name>` al formato
+          moderno `<developer id="...">`). El propio build de PyInstaller
+          (`packaging/p2p-total.spec`, modo "onedir" para los tres
+          sistemas operativos: más lento de arrancar que "onefile" pero
+          mucho más fiable con una dependencia binaria pesada como
+          libtorrent) se probó en local en este mismo entorno Linux:
+          `pyinstaller packaging/p2p-total.spec --noconfirm` genera
+          `dist/p2p-total/` sin errores, el binario arranca de verdad
+          bajo `QT_QPA_PLATFORM=offscreen` sin ningún traceback, y los
+          tres PNG (`IconoCuadrado.png`, `Logo.png`, `AnabasaSoft.png`)
+          añadidos como `datas` aparecen dentro de `dist/p2p-total/
+          _internal/` — la carpeta a la que apunta `sys._MEIPASS` en
+          builds "onedir" de PyInstaller 6.x, confirmando que la
+          resolución de rutas del punto 33.1 funciona también en un
+          ejecutable congelado real, no solo simulado. Los scripts
+          `packaging/linux/build-linux-packages.sh` (usa `fpm` para
+          generar `.deb` y `.rpm` a partir de ese mismo build) y
+          `packaging/linux/build-appimage.sh` (usa `appimagetool` para
+          generar el AppImage) están escritos y cableados al workflow
+          `.github/workflows/build-packages.yml`, pero **no se han
+          podido ejercitar en local** (`fpm` necesita Ruby + rpm +
+          permisos de sistema que no se han instalado en esta máquina a
+          propósito, para no tocar el sistema real del usuario sin
+          permiso) — su validación real queda pendiente de una
+          ejecución del workflow en un runner de GitHub Actions.
+    33.6. [ ] **Flatpak**: excluido deliberadamente del alcance de esta
+          tarea a petición explícita y literal del usuario ("Tiene que
+          crear .deb, .rpm. appimage, windows y macos", sin mencionar
+          Flatpak), aunque la propia regla de este backlog pide
+          resolver los sub-puntos en orden estricto sin saltarse
+          ninguno. Se deja aquí anotado el conflicto en vez de
+          resolverlo en silencio en cualquiera de los dos sentidos:
+          queda pendiente por si el usuario confirma más adelante que
+          quiere completarlo también, retomando entonces el orden
+          estricto en este mismo punto.
+    33.7. ✅ **Riesgo de `libtorrent` en Windows/macOS**: comprobado
+          contra el índice real de PyPI (`pypi.org/pypi/libtorrent/
+          json`) para la versión estable 2.0.11: sí hay wheels
+          oficiales prebuilt para Windows (`win32` y `win_amd64`) y
+          macOS (`macosx` x86_64 y arm64, con builds específicos para
+          distintas versiones del SDK), cubriendo cPython 3.10 a 3.13
+          en ambas plataformas — el riesgo que apuntaba este punto no
+          se materializa, así que no hace falta dejar el backend
+          BitTorrent como opcional ahí. El workflow fija Python 3.12
+          (`env.PYTHON_VERSION`) por estar dentro de ese rango
+          soportado en los tres sistemas operativos.
+    33.8. **Empaquetado Windows** (`.exe`/instalador): escrito
+          `packaging/windows/installer.iss` (Inno Setup) con el
+          asistente clásico "Siguiente, Siguiente, Instalar" pedido
+          explícitamente por el usuario (páginas por defecto: bienvenida,
+          carpeta de destino, grupo del menú inicio, acceso directo de
+          escritorio opcional, instalar, finalizar con opción de
+          ejecutar la app), usando ya el `.ico` del punto 33.3. Cableado
+          en el workflow: instala Inno Setup vía `choco` en el runner
+          `windows-latest` y compila con `ISCC.exe`. **No se ha podido
+          validar en un Windows real todavía** — ni que el propio build
+          de PyInstaller funcione en Windows, ni que `qasync` y los
+          sockets UDP/TCP crudos de las cinco redes se comporten igual
+          sobre el `ProactorEventLoop` de Windows (nunca probado hasta
+          ahora, todo el proyecto se validó solo en Linux) — queda
+          pendiente de una ejecución real del workflow. Sin firma de
+          código, Windows SmartScreen avisará de "editor no reconocido"
+          — asumible para una primera versión.
+    33.9. **Empaquetado macOS** (`.app`/`.dmg`): añadido el bloque
+          `BUNDLE` al spec de PyInstaller (usando el `.icns` del punto
+          33.3) y `packaging/macos/build-dmg.sh` (empaqueta el `.app` en
+          un `.dmg` solo con `hdiutil`, ya incluido en macOS, sin
+          dependencias externas). Cableado en el workflow sobre el
+          runner `macos-latest`. **No se ha podido validar en un macOS
+          real todavía** (este entorno de desarrollo es Linux) — queda
+          pendiente de una ejecución real del workflow. Sin firma ni
+          notarización de Apple, Gatekeeper bloqueará o avisará al abrir
+          la app — mismo caso que Windows, asumible para una primera
+          versión.
+
+    Workflow común a 33.5/33.8/33.9:
+    `.github/workflows/build-packages.yml`, con un job por plataforma
+    (`linux-packages`, `windows-installer`, `macos-dmg`) más un job
+    `version` (calcula la versión a partir del tag `vX.Y.Z` empujado, o
+    "0.0.0-dev" si se lanza a mano) y un job final `release` (solo si el
+    disparo fue un tag `v*`) que adjunta los paquetes generados a un
+    release de GitHub recién creado. Se dispara con `push` de un tag
+    `v*` o manualmente (`workflow_dispatch`) para poder probar sin
+    necesidad de crear un tag real. Deliberadamente sin ninguna GitHub
+    Action de terceros más allá de las oficiales (`actions/checkout`,
+    `actions/setup-python`, `actions/upload-artifact`, `actions/
+    download-artifact`): Inno Setup se instala vía `chocolatey` (ya
+    preinstalado en los runners de Windows) y la publicación del release
+    se hace con `gh`, ya preinstalado en todos los runners — mismo
+    espíritu de minimizar dependencias externas que el resto del
+    proyecto. Pendiente el siguiente paso: empujar esta rama y lanzar el
+    workflow manualmente para validar de verdad los tres builds contra
+    runners reales de GitHub Actions antes de dar 33.5/33.8/33.9 por
+    completados con el mismo nivel de confianza que 33.7.
 
     Nota de alcance para 33.7-33.9: en el momento de escribir este
     punto, `README.md` (línea 3) describe el proyecto como "Cliente P2P

@@ -1,0 +1,148 @@
+name: Construir paquetes
+
+# Genera automáticamente los instaladores de las cinco plataformas del
+# punto 33 del backlog (ver DEVLOG.md): .deb, .rpm y AppImage en Linux,
+# instalador de Windows tipo "Siguiente, Siguiente, Instalar" (Inno Setup)
+# y .dmg en macOS. Se dispara al subir un tag "v*" (publica los paquetes
+# como release de GitHub) o manualmente desde la pestaña Actions (solo
+# genera los artefactos, sin publicar release, para poder probar sin
+# necesidad de crear un tag).
+#
+# Deliberadamente sin ninguna GitHub Action de terceros más allá de las
+# oficiales (actions/checkout, actions/setup-python, actions/upload-
+# artifact, actions/download-artifact): Inno Setup se instala vía
+# chocolatey (ya viene preinstalado en los runners de Windows) y la
+# publicación del release se hace con `gh`, ya preinstalado en todos los
+# runners — mismo espíritu del proyecto de minimizar dependencias.
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch: {}
+
+env:
+  PYTHON_VERSION: "3.12"
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get_version.outputs.version }}
+    steps:
+      - id: get_version
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "version=${GITHUB_REF#refs/tags/v}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=0.0.0-dev" >> "$GITHUB_OUTPUT"
+          fi
+
+  linux-packages:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar dependencias Python
+        run: |
+          pip install -r requirements.txt pyinstaller
+      - name: Construir build PyInstaller (onedir)
+        run: pyinstaller packaging/p2p-total.spec --noconfirm
+      - name: Instalar fpm
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ruby ruby-dev rubygems build-essential rpm
+          sudo gem install --no-document fpm
+      - name: Construir .deb y .rpm
+        run: packaging/linux/build-linux-packages.sh "$VERSION"
+      - name: Descargar appimagetool
+        run: |
+          curl -fsSL -o appimagetool \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool
+      - name: Construir AppImage
+        run: packaging/linux/build-appimage.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-packages
+          path: |
+            *.deb
+            *.rpm
+            *.AppImage
+
+  windows-installer:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar dependencias Python
+        shell: bash
+        run: pip install -r requirements.txt pyinstaller
+      - name: Construir build PyInstaller (onedir)
+        shell: bash
+        run: pyinstaller packaging/p2p-total.spec --noconfirm
+      - name: Instalar Inno Setup
+        run: choco install innosetup -y --no-progress
+      - name: Compilar el instalador
+        shell: bash
+        run: |
+          sed -i "s/#define MyAppVersion \"1.0\"/#define MyAppVersion \"$VERSION\"/" packaging/windows/installer.iss
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/windows/installer.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-installer
+          path: dist-installer/*.exe
+
+  macos-dmg:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar dependencias Python
+        run: pip install -r requirements.txt pyinstaller
+      - name: Construir build PyInstaller (.app)
+        run: pyinstaller packaging/p2p-total.spec --noconfirm
+      - name: Empaquetar el .dmg
+        run: packaging/macos/build-dmg.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-dmg
+          path: "*.dmg"
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [version, linux-packages, windows-installer, macos-dmg]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publicar release con los paquetes adjuntos
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF#refs/tags/}" \
+            artifacts/linux-packages/* \
+            artifacts/windows-installer/* \
+            artifacts/macos-dmg/* \
+            --repo "${GITHUB_REPOSITORY}" \
+            --title "P2P Total ${{ needs.version.outputs.version }}" \
+            --generate-notes

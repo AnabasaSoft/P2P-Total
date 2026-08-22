@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>org.anabasasoft.P2PTotal</id>
+  <name>P2P Total</name>
+  <summary>Cliente P2P multi-red: BitTorrent, Soulseek, DC++, Gnutella2 y eMule/Kad</summary>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <developer id="org.anabasasoft">
+    <name>AnabasaSoft</name>
+  </developer>
+  <url type="homepage">https://github.com/AnabasaSoft/P2P-Total</url>
+  <url type="bugtracker">https://github.com/AnabasaSoft/P2P-Total/issues</url>
+  <launchable type="desktop-id">p2p-total.desktop</launchable>
+  <description>
+    <p>
+      P2P Total es un cliente P2P multi-red con una única interfaz gráfica,
+      sin depender de aMule ni de ningún otro cliente externo: todo corre
+      dentro del propio proceso mediante sockets y asyncio. Soporta
+      BitTorrent, Soulseek, DC++, Gnutella2 y eMule/Kad (eD2k + Kademlia).
+    </p>
+  </description>
+  <categories>
+    <category>Network</category>
+    <category>FileTransfer</category>
+  </categories>
+  <provides>
+    <binary>p2p-total</binary>
+  </provides>
+  <releases>
+    <release version="1.0" date="2026-08-22"/>
+  </releases>
+  <content_rating type="oars-1.1" />
+</component>

@@ -15,6 +15,17 @@ __pycache__/
 build/
 dist/
 
+# Artefactos de empaquetado (packaging/), generados por
+# .github/workflows/build-packages.yml, no se versionan
+AppDir/
+stage/
+dist-installer/
+appimagetool
+*.deb
+*.rpm
+*.AppImage
+*.dmg
+
 # Herramientas / IDE
 .serena/
 .claude/

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=P2P Total
+Comment=Cliente P2P multi-red: BitTorrent, Soulseek, DC++, Gnutella2 y eMule/Kad
+Exec=p2p-total
+Icon=p2p-total
+Terminal=false
+Categories=Network;FileTransfer;P2P;
+StartupWMClass=p2p-total
