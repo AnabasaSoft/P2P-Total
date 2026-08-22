@@ -1,6 +1,9 @@
 # Core
 PyQt6>=6.6
 qasync>=0.28   # integra el bucle de eventos de Qt con el de asyncio para la GUI
+keyring>=25.0  # guarda las contraseñas (Soulseek, hub de DC++, proxy) en el
+               # almacén de credenciales del sistema en vez de en texto
+               # plano en config.json (ver core/config.py)
 
 # Backend BitTorrent
 libtorrent>=2.0

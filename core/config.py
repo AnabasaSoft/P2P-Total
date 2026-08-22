@@ -7,9 +7,19 @@ credenciales de Soulseek y la carpeta de descargas por defecto, pero
 aquí es donde irán el resto de ajustes del programa (límites de
 velocidad, puertos, credenciales de DC++, etc.) a medida que se añadan
 las demás redes.
+
+Las contraseñas (Soulseek, hub de DC++, proxy) no se guardan en texto
+plano en este json salvo que no quede más remedio: se intentan guardar
+primero en el almacén de credenciales del sistema operativo (Secret
+Service/KWallet en Linux, Keychain en macOS, Credential Manager en
+Windows, vía la librería `keyring`) y solo se dejan en el json si eso
+falla, o en modo portable (donde tiene más sentido que el propio
+config.json sea autocontenido). Ver `_keyring_get`/`_keyring_set` más
+abajo.
 """
 
 import json
+import logging
 import os
 import shutil
 import stat
@@ -17,10 +27,67 @@ import sys
 from dataclasses import dataclass, field, asdict
 from pathlib import Path
 
+import keyring
+import keyring.errors
+
 from core.proxy import ProxyConfig
+
+logger = logging.getLogger(__name__)
 
 # Modo portable (punto 25 del backlog): ver `is_portable_mode()` más abajo.
 PORTABLE_DATA_DIRNAME = "p2p-total-data"
+
+# Servicio bajo el que se guardan en el almacén de credenciales del sistema
+# (Secret Service/KWallet en Linux, Keychain en macOS, Credential Manager en
+# Windows, vía la librería `keyring`) las contraseñas de `Config` en vez de
+# en texto plano en `config.json`: la de Soulseek, la del hub de DC++ y la
+# del proxy. En modo portable se guardan en el propio `config.json` de la
+# carpeta portable en su lugar, porque el almacén de credenciales es del
+# equipo anfitrión, no del pendrive, y usarlo dejaría precisamente el rastro
+# en el equipo anfitrión que el modo portable busca evitar.
+_KEYRING_SERVICE = "p2p-total"
+
+
+def _keyring_get(key: str) -> str | None:
+    """`None` si no hay nada guardado bajo esa clave, si estamos en modo
+    portable, o si el almacén de credenciales no está disponible (p.ej. un
+    Linux sin sesión de escritorio, sin Secret Service en marcha)."""
+    if is_portable_mode():
+        return None
+    try:
+        return keyring.get_password(_KEYRING_SERVICE, key)
+    except keyring.errors.KeyringError:
+        logger.warning("No se pudo leer %r del almacén de credenciales del sistema", key, exc_info=True)
+        return None
+
+
+def _keyring_set(key: str, value: str) -> bool:
+    """Intenta guardar `value` en el almacén de credenciales del sistema.
+    Devuelve si lo consiguió: si no (modo portable, o almacén no
+    disponible), la contraseña se queda en texto plano en `config.json`
+    como hasta ahora, en vez de perderse."""
+    if is_portable_mode():
+        return False
+    try:
+        if value:
+            keyring.set_password(_KEYRING_SERVICE, key, value)
+        else:
+            try:
+                keyring.delete_password(_KEYRING_SERVICE, key)
+            except keyring.errors.PasswordDeleteError:
+                pass  # no había nada guardado bajo esa clave: nada que borrar
+        return True
+    except keyring.errors.KeyringError:
+        logger.warning("No se pudo guardar %r en el almacén de credenciales del sistema", key, exc_info=True)
+        return False
+
+
+def _keyring_password_or(from_keyring: str | None, from_json: str) -> str:
+    """`from_keyring` si había algo guardado bajo esa clave, si no lo que
+    hubiera en `config.json` (portable, almacén no disponible, o un
+    `config.json` de antes de este cambio que aún no se ha vuelto a
+    guardar)."""
+    return from_keyring if from_keyring is not None else from_json
 
 
 def _executable_dir() -> Path:
@@ -199,7 +266,11 @@ class Config:
 def load_config(path: Path | None = None) -> Config:
     """`path`, si se indica, permite leer un `config.json` de cualquier
     otra ubicación en vez del real (usado por la importación de
-    configuración desde la GUI, punto 25 del backlog)."""
+    configuración desde la GUI, punto 25 del backlog). En ese caso el
+    fichero importado se trata como autocontenido y no se toca el
+    almacén de credenciales del sistema: las contraseñas se leen tal
+    cual vengan en su propio json, igual que en modo portable."""
+    use_keyring = path is None  # explícita: no tocar el keyring en importación/exportación ni en la transición a portable (`_keyring_get`/`_keyring_set` ya evitan el keyring por su cuenta en modo portable)
     path = path or CONFIG_PATH
     if not path.exists():
         return Config()
@@ -221,7 +292,7 @@ def load_config(path: Path | None = None) -> Config:
         ),
         soulseek=SoulseekConfig(
             username=soulseek_data.get("username", ""),
-            password=soulseek_data.get("password", ""),
+            password=_keyring_password_or(_keyring_get("soulseek") if use_keyring else None, soulseek_data.get("password", "")),
             listen_port=soulseek_data.get("listen_port", 2234),
             max_results=soulseek_data.get("max_results", 0),
             search_timeout=soulseek_data.get("search_timeout", 20.0),
@@ -230,7 +301,7 @@ def load_config(path: Path | None = None) -> Config:
             nickname=dcpp_data.get("nickname", ""),
             default_hub_host=dcpp_data.get("default_hub_host", ""),
             default_hub_port=dcpp_data.get("default_hub_port", 411),
-            default_hub_password=dcpp_data.get("default_hub_password", ""),
+            default_hub_password=_keyring_password_or(_keyring_get("dcpp_hub") if use_keyring else None, dcpp_data.get("default_hub_password", "")),
             listen_port=dcpp_data.get("listen_port", 41290),
             max_results=dcpp_data.get("max_results", 0),
             search_timeout=dcpp_data.get("search_timeout", 20.0),
@@ -269,7 +340,7 @@ def load_config(path: Path | None = None) -> Config:
             host=proxy_data.get("host", ""),
             port=proxy_data.get("port", 1080),
             username=proxy_data.get("username", ""),
-            password=proxy_data.get("password", ""),
+            password=_keyring_password_or(_keyring_get("proxy") if use_keyring else None, proxy_data.get("password", "")),
         ),
         default_download_dir=data.get("default_download_dir", Config().default_download_dir),
         # "shared_folder" (str) es el nombre del campo antes de admitir
@@ -289,18 +360,36 @@ def load_config(path: Path | None = None) -> Config:
 def save_config(config: Config, path: Path | None = None) -> None:
     """`path`, si se indica, exporta a cualquier otra ubicación en vez de
     la real (usado por la exportación de configuración desde la GUI,
-    punto 25 del backlog)."""
+    punto 25 del backlog, y por la transición a modo portable, ver
+    `enable_portable_mode`). En ese caso el fichero exportado se trata
+    como autocontenido y no se toca el almacén de credenciales del
+    sistema: las contraseñas se guardan tal cual, en su propio json."""
+    use_keyring = path is None  # ver el mismo razonamiento en `load_config`
     path = path or CONFIG_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    soulseek_dict = asdict(config.soulseek)
+    dcpp_dict = asdict(config.dcpp)
+    proxy_dict = asdict(config.proxy)
+    # Si se consigue guardar cada contraseña en el almacén de credenciales
+    # del sistema, no se duplica en texto plano en config.json (en modo
+    # portable, o si el almacén no está disponible, se queda en el json
+    # como hasta ahora, ver `_keyring_set`).
+    if use_keyring and _keyring_set("soulseek", config.soulseek.password):
+        soulseek_dict["password"] = ""
+    if use_keyring and _keyring_set("dcpp_hub", config.dcpp.default_hub_password):
+        dcpp_dict["default_hub_password"] = ""
+    if use_keyring and _keyring_set("proxy", config.proxy.password):
+        proxy_dict["password"] = ""
+
     data = {
         "torrent": asdict(config.torrent),
-        "soulseek": asdict(config.soulseek),
-        "dcpp": asdict(config.dcpp),
+        "soulseek": soulseek_dict,
+        "dcpp": dcpp_dict,
         "gnutella2": asdict(config.gnutella2),
         "emule": asdict(config.emule),
         "ui": asdict(config.ui),
-        "proxy": asdict(config.proxy),
+        "proxy": proxy_dict,
         "default_download_dir": config.default_download_dir,
         "shared_folders": config.shared_folders,
         "global_download_limit_kbps": config.global_download_limit_kbps,
@@ -314,7 +403,8 @@ def save_config(config: Config, path: Path | None = None) -> None:
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
 
-    # El archivo lleva contraseñas en texto plano: que solo lo pueda leer
+    # Por si alguna contraseña no se pudo mover al almacén de credenciales
+    # del sistema y se ha quedado en texto plano: que solo lo pueda leer
     # el propio usuario (equivalente a chmod 600).
     os.chmod(path, stat.S_IRUSR | stat.S_IWUSR)
 
