@@ -485,6 +485,33 @@ class DCPPBackend(NetworkBackend):
         my_addr = _format_ctm_address(my_ip, self._listen_port)
         await self._hub.send(f"$ConnectToMe {entry['nick']} {my_addr}")
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha una descarga tras reiniciar la app. `expected_tth`
+        no se persiste en el modelo `Download` (solo viajaba en
+        `SearchResult.extra`), así que se pierde la comprobación de
+        integridad final por TTH tras un reinicio; no afecta a poder
+        retomar la descarga en sí, que sigue pidiéndose desde
+        `downloaded_bytes` vía `$Get`."""
+        if self._hub is None or self._find_entry(download) is not None:
+            return
+        nick, remote_path = download.source_id.split(":::", 1)
+        self._active[remote_path] = {
+            "download": download,
+            "nick": nick,
+            "dest_path": download.dest_path,
+            "paused": download.state == DownloadState.PAUSED,
+            "cancelled": False,
+            "writer": None,
+            "limiter": RateLimiter(),
+            "expected_tth": None,
+        }
+        if download.state != DownloadState.PAUSED:
+            download.state = DownloadState.SEARCHING_SOURCES
+            self._notify(download)
+            my_ip = await self._get_local_ip()
+            my_addr = _format_ctm_address(my_ip, self._listen_port)
+            await self._hub.send(f"$ConnectToMe {nick} {my_addr}")
+
     async def cancel_download(self, download: Download) -> None:
         for path, entry in list(self._active.items()):
             if entry["download"] is download or entry["download"].id == download.id:

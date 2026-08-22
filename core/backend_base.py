@@ -64,6 +64,23 @@ class NetworkBackend(ABC):
         que cambie el progreso/estado de una descarga suya."""
         raise NotImplementedError
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha una descarga que ya existía en la base de datos
+        (persistida por `DownloadManager`) pero que el backend no tiene
+        en su seguimiento en memoria porque el proceso se reinició. Se
+        llama justo después de `connect()` para cada descarga en estado
+        activo (QUEUED, SEARCHING_SOURCES, DOWNLOADING o PAUSED) de esta
+        red. Debe reconstruir la entrada interna a partir de
+        `download.source_id` (que cada backend codifica de forma
+        autocontenida) y, si no estaba en pausa, retomar la descarga
+        desde `download.downloaded_bytes`. Por defecto no hace nada:
+        antes de esto, tras reiniciar la app, ninguna descarga volvía a
+        arrancar sola ni con el botón Reanudar, en ninguna de las 5
+        redes, porque el estado de "descarga activa" solo vivía en un
+        diccionario en memoria de cada backend, nunca en la base de
+        datos. Cada backend lo sobreescribe con su propia lógica."""
+        return
+
     def set_global_limits(self, download_bps: int, upload_bps: int) -> None:
         """Fija el límite global de bajada/subida de este backend, en
         bytes/s (0 = sin límite). Por defecto no hace nada: Soulseek,

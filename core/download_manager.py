@@ -153,6 +153,25 @@ class DownloadManager:
         download.id = database.insert_download(download)
         return download
 
+    async def reattach_active_downloads(self, network: Network) -> None:
+        """Reengancha en el backend las descargas de `network` que
+        quedaran activas (QUEUED, SEARCHING_SOURCES, DOWNLOADING o
+        PAUSED) en el historial persistido. Cada backend guarda su
+        seguimiento de "descarga activa" solo en memoria, así que tras
+        reiniciar la app esas descargas seguían apareciendo en la
+        pestaña Transferencias pero no arrancaban solas ni con el botón
+        Reanudar: se llama aquí justo después de conectar la red."""
+        backend = BackendRegistry.get(network)
+        if backend is None:
+            return
+        for download in database.load_all_downloads():
+            if download.network != network or download.state not in _ACTIVE_STATES:
+                continue
+            try:
+                await backend.reattach_download(download)
+            except Exception:
+                pass
+
     async def pause(self, download: Download) -> None:
         backend = BackendRegistry.get(download.network)
         await backend.pause_download(download)

@@ -1576,6 +1576,43 @@ class G2Backend(NetworkBackend):
             self._progress_callback(download)
         asyncio.create_task(self._download_via_http(entry))
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha una descarga tras reiniciar la app: el `source_id`
+        de G2 ya es autocontenido (host, puerto, hash SHA1 y GUID del
+        origen), así que basta con reconstruir la entrada y, si no
+        estaba en pausa, relanzar `_download_via_http` (que reanuda
+        desde el tamaño ya escrito en disco vía `Range:` HTTP, con
+        caída automática a reinicio desde 0 si el origen no lo soporta)."""
+        if download.source_id in self._active:
+            return
+        parts = download.source_id.split(":::", 3)
+        if len(parts) == 4:
+            host_port, sha1_b32, guid_hex, _filename = parts
+        else:
+            host_port, sha1_b32, _filename = parts
+            guid_hex = ""
+        host, port_str = host_port.rsplit(":", 1)
+        port = int(port_str)
+        guid = bytes.fromhex(guid_hex) if guid_hex else None
+        entry = {
+            "download": download,
+            "host": host,
+            "port": port,
+            "sha1_b32": sha1_b32,
+            "guid": guid,
+            "dest_path": download.dest_path,
+            "paused": download.state == DownloadState.PAUSED,
+            "cancelled": False,
+            "writer": None,
+            "limiter": RateLimiter(),
+        }
+        self._active[download.source_id] = entry
+        if download.state != DownloadState.PAUSED:
+            download.state = DownloadState.SEARCHING_SOURCES
+            if self._progress_callback:
+                self._progress_callback(download)
+            asyncio.create_task(self._download_via_http(entry))
+
     async def cancel_download(self, download: Download) -> None:
         entry = self._active.get(download.source_id)
         if entry is not None:

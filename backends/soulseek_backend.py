@@ -644,6 +644,39 @@ class SoulseekBackend(NetworkBackend):
         self._notify(download)
         asyncio.create_task(self._run_download(entry_id))
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha una descarga tras reiniciar la app. Solo se
+        recupera la fuente original (`source_id`): las fuentes
+        alternativas de un resultado fusionado no se persisten en el
+        modelo `Download`, así que aquí no hay "carrera" entre varias,
+        a diferencia de `start_download`."""
+        if self._server is None or self._find_entry(download) is not None:
+            return
+        username, remote_path = _decode_source_id(download.source_id)
+        entry_id = self._next_entry_id
+        self._next_entry_id += 1
+        self._active[entry_id] = {
+            "download": download,
+            "username": username,
+            "remote_path": remote_path,
+            "candidates": [(username, remote_path)],
+            "dest_path": download.dest_path,
+            "conns": [],
+            "file_conn": None,
+            "token": None,
+            "size": download.size_bytes,
+            "paused": download.state == DownloadState.PAUSED,
+            "cancelled": False,
+            "winner": None,
+            "winner_conn": None,
+            "last_error": None,
+            "limiter": RateLimiter(),
+        }
+        if download.state != DownloadState.PAUSED:
+            download.state = DownloadState.SEARCHING_SOURCES
+            self._notify(download)
+            asyncio.create_task(self._run_download(entry_id))
+
     async def cancel_download(self, download: Download) -> None:
         found = self._find_entry(download)
         if found is None:

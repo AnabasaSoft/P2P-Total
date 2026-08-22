@@ -2200,6 +2200,29 @@ class EMuleBackend(NetworkBackend):
                                 resume_from=download.downloaded_bytes)
         )
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha una descarga tras reiniciar la app. El `source_id`
+        de eMule ya es autocontenido (hash eD2k, tamaño y título), así
+        que basta con reconstruir la entrada y, si no estaba en pausa,
+        relanzar `_run_download` desde `downloaded_bytes` (ya soportado
+        vía el parámetro `resume_from`, el mismo que usa `resume_download`)."""
+        if self._server_writer is None or self._find_active(download) is not None:
+            return
+        file_hash_hex, _size_str, _title = download.source_id.split(":::", 2)
+        file_hash = bytes.fromhex(file_hash_hex)
+        self._active[file_hash_hex] = {
+            "download": download, "dest_path": download.dest_path, "file_hash": file_hash,
+            "paused": download.state == DownloadState.PAUSED, "cancelled": False,
+            "writer": None, "limiter": RateLimiter(),
+        }
+        if download.state != DownloadState.PAUSED:
+            download.state = DownloadState.SEARCHING_SOURCES
+            self._notify(download)
+            asyncio.create_task(
+                self._run_download(file_hash, download, download.dest_path,
+                                    resume_from=download.downloaded_bytes)
+            )
+
     async def cancel_download(self, download: Download) -> None:
         for key, entry in list(self._active.items()):
             if entry["download"] is download or entry["download"].id == download.id:

@@ -68,6 +68,7 @@ class ConnectionManager(QObject):
         self._backends[network] = backend
         self._apply_speed_limits(backend, load_config())
         stats_tracker.connection_opened(network)
+        await self._download_manager.reattach_active_downloads(network)
         self._set_status(network, STATUS_CONNECTED)
 
     def apply_global_speed_limits(self) -> None:

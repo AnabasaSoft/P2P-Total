@@ -367,6 +367,36 @@ class TorrentBackend(NetworkBackend):
         self._active[info_hash] = {"handle": handle, "download": download}
         return download
 
+    async def reattach_download(self, download: Download) -> None:
+        """Reengancha un torrent tras reiniciar la app: la sesión de
+        libtorrent se crea desde cero en cada `connect()`, así que hay
+        que volver a añadir el torrent (magnet o .torrent local) con el
+        `save_path` real. Al no pasar datos de fast-resume, libtorrent
+        hace un recheck automático de las piezas ya en disco (rápido,
+        solo hashes) antes de seguir bajando el resto — no hace falta
+        reimplementar esa lógica a mano."""
+        if self._session is None or self._find_entry(download) is not None:
+            return
+
+        if download.source_id.startswith(_FILE_PREFIX):
+            path = download.source_id[len(_FILE_PREFIX):]
+            info = lt.torrent_info(path)
+            handle = self._session.add_torrent({"ti": info, "save_path": download.dest_path})
+        else:
+            magnet = _to_magnet(download.source_id)
+            params = lt.parse_magnet_uri(magnet)
+            params.save_path = download.dest_path
+            handle = self._session.add_torrent(params)
+
+        if download.state == DownloadState.PAUSED:
+            handle.pause()
+        else:
+            handle.resume()
+            download.state = DownloadState.SEARCHING_SOURCES
+
+        info_hash = str(handle.info_hash())
+        self._active[info_hash] = {"handle": handle, "download": download}
+
     async def pause_download(self, download: Download) -> None:
         entry = self._find_entry(download)
         if entry:
