@@ -83,12 +83,28 @@ no se comparte nada hasta que se configure al menos una); aquí es
 donde irán el resto de ajustes del programa a medida que se añadan las
 demás redes (límites de velocidad, etc.).
 
-⚠️ Las contraseñas se guardan **en texto plano** en ese archivo (los
-permisos 600 protegen contra otros usuarios del sistema, pero no
-contra malware que corra con tu propio usuario). Si en algún momento
-se quiere ir más allá, la opción habitual en Linux sería integrar con
-el keyring del sistema (`secretstorage`/D-Bus), pero de momento se ha
-priorizado simplicidad.
+Las contraseñas (Soulseek, hub de DC++, proxy) **ya no se guardan en
+texto plano**: se delegan primero en el almacén de credenciales nativo
+del sistema operativo (Secret Service/KWallet en Linux, Keychain en
+macOS, Credential Manager en Windows) vía la librería `keyring`
+(`core/config.py`, `_keyring_get`/`_keyring_set`), y `config.json` solo
+guarda un valor vacío en su lugar. Se cae a texto plano en `config.json`
+únicamente si el almacén no está disponible (p.ej. un Linux sin sesión
+de escritorio ni Secret Service en marcha) o en **modo portable**
+(punto 25 del backlog): ahí se guardan a propósito en el propio json,
+ya que el almacén de credenciales pertenece al equipo anfitrión, no al
+pendrive, y usarlo dejaría precisamente el rastro que el modo portable
+busca evitar. `load_config()`/`save_config()` con una `path` explícita
+(exportar/importar configuración desde la GUI) tampoco tocan el
+almacén, por el mismo motivo: ese fichero debe quedar autocontenido.
+Los permisos 600 se mantienen como segunda capa de protección para
+cualquier contraseña que sí acabe en el json (portable, almacén no
+disponible, o un `config.json` de antes de este cambio aún no
+regrabado). Validado con un test aislado (`XDG_CONFIG_HOME` temporal,
+sin depender de un almacén real) del ciclo completo guardar → releer
+con `keyring` simulado, caída a texto plano cuando el almacén simulado
+falla, y que el modo portable y la importación/exportación con `path`
+explícita nunca tocan el almacén.
 
 ## Estado actual
 - [x] Interfaz de backend + registro
