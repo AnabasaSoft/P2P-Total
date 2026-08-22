@@ -164,6 +164,8 @@ velocidad globales y por descarga.
 - Importar/exportar `config.json` desde la propia GUI, y **modo
   portable** (todo junto al ejecutable, sin tocar `~/.config`), pensado
   para llevar el programa entero en un pendrive.
+- Aviso de nueva versión disponible al arrancar (comprobado contra los
+  releases publicados en GitHub), con acceso directo a la descarga.
 
 ## Instalación
 
@@ -227,6 +229,8 @@ cuatro redes no tenían una librería Python madura y fiable disponible,
 así que están reimplementadas desde cero estudiando el protocolo real.
 
 ## Estado del proyecto y hoja de ruta
+
+**Versión actual: 1.0.**
 
 Las **cinco redes** (BitTorrent, Soulseek, DC++, Gnutella2, eMule/Kad)
 y la **GUI completa** están implementadas y validadas contra

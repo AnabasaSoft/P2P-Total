@@ -233,6 +233,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pausar",
         "ctx_resume": "▶️ Reanudar",
         "ctx_cancel": "✖️ Cancelar",
+        "ctx_restart": "▶️ Iniciar",
+        "ctx_restart_from_scratch": "🔄 Reiniciar",
         "ctx_delete": "🗑️ Borrar descarga (y archivos)",
         "ctx_clear_completed": "🧹 Limpiar completados",
         "ctx_open_folder": "📂 Abrir carpeta",
@@ -347,6 +349,13 @@ TRANSLATIONS = {
             "Todo corre dentro del propio proceso, sin depender de aMule "
             "ni de ningún cliente externo."
         ),
+        "about_github_label": "Código fuente",
+        "about_email_label": "Contacto",
+        "about_version": "Versión {version}",
+        "update_dialog_title": "Nueva versión disponible",
+        "update_dialog_text": "Hay una nueva versión de P2P Total disponible: {version}.\n\n¿Quieres ir a la página de descarga en GitHub?",
+        "update_dialog_download": "Descargar",
+        "update_dialog_cancel": "Cancelar",
 
         # --- Barra de estado ---
         "statusbar_ready": "Listo",
@@ -595,6 +604,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pause",
         "ctx_resume": "▶️ Resume",
         "ctx_cancel": "✖️ Cancel",
+        "ctx_restart": "▶️ Start",
+        "ctx_restart_from_scratch": "🔄 Restart",
         "ctx_delete": "🗑️ Delete download (and files)",
         "ctx_clear_completed": "🧹 Clear completed",
         "ctx_open_folder": "📂 Open folder",
@@ -707,6 +718,13 @@ TRANSLATIONS = {
             "Everything runs inside the process itself, with no dependency "
             "on aMule or any external client."
         ),
+        "about_github_label": "Source code",
+        "about_email_label": "Contact",
+        "about_version": "Version {version}",
+        "update_dialog_title": "New version available",
+        "update_dialog_text": "A new version of P2P Total is available: {version}.\n\nDo you want to go to the download page on GitHub?",
+        "update_dialog_download": "Download",
+        "update_dialog_cancel": "Cancel",
 
         "statusbar_ready": "Ready",
         "statusbar_connected_count": "{n}/{total} networks connected",
@@ -954,6 +972,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pausatu",
         "ctx_resume": "▶️ Jarraitu",
         "ctx_cancel": "✖️ Bertan behera utzi",
+        "ctx_restart": "▶️ Hasi",
+        "ctx_restart_from_scratch": "🔄 Berrabiarazi",
         "ctx_delete": "🗑️ Deskarga ezabatu (eta fitxategiak)",
         "ctx_clear_completed": "🧹 Osatutakoak garbitu",
         "ctx_open_folder": "📂 Ireki karpeta",
@@ -1066,6 +1086,13 @@ TRANSLATIONS = {
             "Guztia prozesuaren barruan exekutatzen da, aMule edo kanpoko "
             "bezerorik gabe."
         ),
+        "about_github_label": "Iturburu-kodea",
+        "about_email_label": "Harremanetarako",
+        "about_version": "{version} bertsioa",
+        "update_dialog_title": "Bertsio berria eskuragarri",
+        "update_dialog_text": "P2P Total-en bertsio berria eskuragarri dago: {version}.\n\nGitHub-eko deskarga orrira joan nahi duzu?",
+        "update_dialog_download": "Deskargatu",
+        "update_dialog_cancel": "Utzi",
 
         "statusbar_ready": "Prest",
         "statusbar_connected_count": "{n}/{total} sare konektatuta",
@@ -1309,6 +1336,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Mettre en pause",
         "ctx_resume": "▶️ Reprendre",
         "ctx_cancel": "✖️ Annuler",
+        "ctx_restart": "▶️ Démarrer",
+        "ctx_restart_from_scratch": "🔄 Redémarrer",
         "ctx_delete": "🗑️ Supprimer le téléchargement (et les fichiers)",
         "ctx_clear_completed": "🧹 Effacer les téléchargements terminés",
         "ctx_open_folder": "📂 Ouvrir le dossier",
@@ -1422,6 +1451,13 @@ TRANSLATIONS = {
             "Tout s'exécute dans le processus lui-même, sans dépendre d'aMule "
             "ni d'aucun client externe."
         ),
+        "about_github_label": "Code source",
+        "about_email_label": "Contact",
+        "about_version": "Version {version}",
+        "update_dialog_title": "Nouvelle version disponible",
+        "update_dialog_text": "Une nouvelle version de P2P Total est disponible : {version}.\n\nVoulez-vous accéder à la page de téléchargement sur GitHub ?",
+        "update_dialog_download": "Télécharger",
+        "update_dialog_cancel": "Annuler",
 
         "statusbar_ready": "Prêt",
         "statusbar_connected_count": "{n}/{total} réseaux connectés",
@@ -1663,6 +1699,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Metti in pausa",
         "ctx_resume": "▶️ Riprendi",
         "ctx_cancel": "✖️ Annulla",
+        "ctx_restart": "▶️ Avvia",
+        "ctx_restart_from_scratch": "🔄 Riavvia",
         "ctx_delete": "🗑️ Elimina il download (e i file)",
         "ctx_clear_completed": "🧹 Cancella i download completati",
         "ctx_open_folder": "📂 Apri la cartella",
@@ -1776,6 +1814,13 @@ TRANSLATIONS = {
             "Tutto viene eseguito nel processo stesso, senza dipendere da aMule "
             "né da alcun client esterno."
         ),
+        "about_github_label": "Codice sorgente",
+        "about_email_label": "Contatti",
+        "about_version": "Versione {version}",
+        "update_dialog_title": "Nuova versione disponibile",
+        "update_dialog_text": "È disponibile una nuova versione di P2P Total: {version}.\n\nVuoi andare alla pagina di download su GitHub?",
+        "update_dialog_download": "Scarica",
+        "update_dialog_cancel": "Annulla",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} reti connesse",
@@ -2017,6 +2062,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pausar",
         "ctx_resume": "▶️ Retomar",
         "ctx_cancel": "✖️ Cancelar",
+        "ctx_restart": "▶️ Iniciar",
+        "ctx_restart_from_scratch": "🔄 Reiniciar",
         "ctx_delete": "🗑️ Eliminar a transferência (e os ficheiros)",
         "ctx_clear_completed": "🧹 Limpar as transferências concluídas",
         "ctx_open_folder": "📂 Abrir a pasta",
@@ -2130,6 +2177,13 @@ TRANSLATIONS = {
             "Tudo é executado no próprio processo, sem depender do aMule "
             "nem de qualquer cliente externo."
         ),
+        "about_github_label": "Código-fonte",
+        "about_email_label": "Contacto",
+        "about_version": "Versão {version}",
+        "update_dialog_title": "Nova versão disponível",
+        "update_dialog_text": "Há uma nova versão do P2P Total disponível: {version}.\n\nDeseja ir para a página de download no GitHub?",
+        "update_dialog_download": "Descarregar",
+        "update_dialog_cancel": "Cancelar",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} redes ligadas",
@@ -2373,6 +2427,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pausieren",
         "ctx_resume": "▶️ Fortsetzen",
         "ctx_cancel": "✖️ Abbrechen",
+        "ctx_restart": "▶️ Starten",
+        "ctx_restart_from_scratch": "🔄 Neu starten",
         "ctx_delete": "🗑️ Download löschen (und Dateien)",
         "ctx_clear_completed": "🧹 Abgeschlossene Downloads entfernen",
         "ctx_open_folder": "📂 Ordner öffnen",
@@ -2486,6 +2542,13 @@ TRANSLATIONS = {
             "Alles läuft im Prozess selbst, ohne Abhängigkeit von aMule "
             "oder einem externen Client."
         ),
+        "about_github_label": "Quellcode",
+        "about_email_label": "Kontakt",
+        "about_version": "Version {version}",
+        "update_dialog_title": "Neue Version verfügbar",
+        "update_dialog_text": "Eine neue Version von P2P Total ist verfügbar: {version}.\n\nMöchten Sie zur Download-Seite auf GitHub gehen?",
+        "update_dialog_download": "Herunterladen",
+        "update_dialog_cancel": "Abbrechen",
 
         "statusbar_ready": "Bereit",
         "statusbar_connected_count": "{n}/{total} Netzwerke verbunden",
@@ -2727,6 +2790,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Posa en pausa",
         "ctx_resume": "▶️ Reprèn",
         "ctx_cancel": "✖️ Cancel·la",
+        "ctx_restart": "▶️ Inicia",
+        "ctx_restart_from_scratch": "🔄 Reinicia",
         "ctx_delete": "🗑️ Elimina la descàrrega (i els fitxers)",
         "ctx_clear_completed": "🧹 Neteja les descàrregues completades",
         "ctx_open_folder": "📂 Obre la carpeta",
@@ -2840,6 +2905,13 @@ TRANSLATIONS = {
             "Tot s'executa dins del mateix procés, sense dependre d'aMule "
             "ni de cap client extern."
         ),
+        "about_github_label": "Codi font",
+        "about_email_label": "Contacte",
+        "about_version": "Versió {version}",
+        "update_dialog_title": "Nova versió disponible",
+        "update_dialog_text": "Hi ha una nova versió de P2P Total disponible: {version}.\n\nVols anar a la pàgina de descàrrega a GitHub?",
+        "update_dialog_download": "Descarrega",
+        "update_dialog_cancel": "Cancel·la",
 
         "statusbar_ready": "Preparat",
         "statusbar_connected_count": "{n}/{total} xarxes connectades",
@@ -3081,6 +3153,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Pausar",
         "ctx_resume": "▶️ Retomar",
         "ctx_cancel": "✖️ Cancelar",
+        "ctx_restart": "▶️ Iniciar",
+        "ctx_restart_from_scratch": "🔄 Reiniciar",
         "ctx_delete": "🗑️ Eliminar a descarga (e os ficheiros)",
         "ctx_clear_completed": "🧹 Limpar as descargas completadas",
         "ctx_open_folder": "📂 Abrir o cartafol",
@@ -3194,6 +3268,13 @@ TRANSLATIONS = {
             "Todo se executa no propio proceso, sen depender de aMule "
             "nin de ningún cliente externo."
         ),
+        "about_github_label": "Código fonte",
+        "about_email_label": "Contacto",
+        "about_version": "Versión {version}",
+        "update_dialog_title": "Nova versión dispoñible",
+        "update_dialog_text": "Hai unha nova versión de P2P Total dispoñible: {version}.\n\nQueres ir á páxina de descarga en GitHub?",
+        "update_dialog_download": "Descargar",
+        "update_dialog_cancel": "Cancelar",
 
         "statusbar_ready": "Listo",
         "statusbar_connected_count": "{n}/{total} redes conectadas",
@@ -3435,6 +3516,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ Приостановить",
         "ctx_resume": "▶️ Продолжить",
         "ctx_cancel": "✖️ Отменить",
+        "ctx_restart": "▶️ Начать",
+        "ctx_restart_from_scratch": "🔄 Перезапустить",
         "ctx_delete": "🗑️ Удалить загрузку (и файлы)",
         "ctx_clear_completed": "🧹 Очистить завершённые загрузки",
         "ctx_open_folder": "📂 Открыть папку",
@@ -3548,6 +3631,13 @@ TRANSLATIONS = {
             "Всё выполняется в самом процессе, без зависимости от aMule "
             "или каких-либо внешних клиентов."
         ),
+        "about_github_label": "Исходный код",
+        "about_email_label": "Контакты",
+        "about_version": "Версия {version}",
+        "update_dialog_title": "Доступна новая версия",
+        "update_dialog_text": "Доступна новая версия P2P Total: {version}.\n\nПерейти на страницу загрузки на GitHub?",
+        "update_dialog_download": "Скачать",
+        "update_dialog_cancel": "Отмена",
 
         "statusbar_ready": "Готово",
         "statusbar_connected_count": "{n}/{total} сетей подключено",
@@ -3785,6 +3875,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ 暂停",
         "ctx_resume": "▶️ 继续",
         "ctx_cancel": "✖️ 取消",
+        "ctx_restart": "▶️ 开始",
+        "ctx_restart_from_scratch": "🔄 重新开始",
         "ctx_delete": "🗑️ 删除下载（及文件）",
         "ctx_clear_completed": "🧹 清除已完成的下载",
         "ctx_open_folder": "📂 打开文件夹",
@@ -3896,6 +3988,13 @@ TRANSLATIONS = {
             "Gnutella2、eMule/Kad），拥有统一的界面。\n\n"
             "一切均在自身进程内运行，不依赖 aMule 或任何外部客户端。"
         ),
+        "about_github_label": "源代码",
+        "about_email_label": "联系方式",
+        "about_version": "版本 {version}",
+        "update_dialog_title": "有新版本可用",
+        "update_dialog_text": "P2P Total 有新版本可用：{version}。\n\n是否前往 GitHub 下载页面？",
+        "update_dialog_download": "下载",
+        "update_dialog_cancel": "取消",
 
         "statusbar_ready": "就绪",
         "statusbar_connected_count": "{n}/{total} 个网络已连接",
@@ -4137,6 +4236,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ 一時停止",
         "ctx_resume": "▶️ 再開",
         "ctx_cancel": "✖️ キャンセル",
+        "ctx_restart": "▶️ 開始",
+        "ctx_restart_from_scratch": "🔄 リスタート",
         "ctx_delete": "🗑️ ダウンロードを削除（ファイルも含む）",
         "ctx_clear_completed": "🧹 完了したダウンロードを消去",
         "ctx_open_folder": "📂 フォルダを開く",
@@ -4250,6 +4351,13 @@ TRANSLATIONS = {
             "すべてはプロセス自身の中で動作し、aMule やその他の外部クライアントに"
             "依存しません。"
         ),
+        "about_github_label": "ソースコード",
+        "about_email_label": "連絡先",
+        "about_version": "バージョン {version}",
+        "update_dialog_title": "新しいバージョンがあります",
+        "update_dialog_text": "P2P Total の新しいバージョン {version} が利用可能です。\n\nGitHub のダウンロードページを開きますか？",
+        "update_dialog_download": "ダウンロード",
+        "update_dialog_cancel": "キャンセル",
 
         "statusbar_ready": "準備完了",
         "statusbar_connected_count": "{n}/{total} ネットワークに接続中",
@@ -4493,6 +4601,8 @@ TRANSLATIONS = {
         "ctx_pause": "⏸️ 일시 정지",
         "ctx_resume": "▶️ 재개",
         "ctx_cancel": "✖️ 취소",
+        "ctx_restart": "▶️ 시작",
+        "ctx_restart_from_scratch": "🔄 다시 시작",
         "ctx_delete": "🗑️ 다운로드 삭제 (파일 포함)",
         "ctx_clear_completed": "🧹 완료 항목 지우기",
         "ctx_open_folder": "📂 폴더 열기",
@@ -4605,6 +4715,13 @@ TRANSLATIONS = {
             "모든 기능은 프로세스 자체 안에서 실행되며, aMule이나 "
             "다른 외부 클라이언트에 의존하지 않습니다."
         ),
+        "about_github_label": "소스 코드",
+        "about_email_label": "연락처",
+        "about_version": "버전 {version}",
+        "update_dialog_title": "새 버전 사용 가능",
+        "update_dialog_text": "P2P Total의 새 버전 {version}을(를) 사용할 수 있습니다.\n\nGitHub 다운로드 페이지로 이동하시겠습니까?",
+        "update_dialog_download": "다운로드",
+        "update_dialog_cancel": "취소",
 
         "statusbar_ready": "준비됨",
         "statusbar_connected_count": "{n}/{total}개 네트워크 연결됨",

@@ -1,7 +1,7 @@
 """Pestaña de transferencias: tabla de descargas en curso/completadas
 con barra de progreso real y menú contextual (pausar/reanudar/
-cancelar/abrir carpeta), al estilo de la pestaña "Transferencias" de
-aMule."""
+cancelar/iniciar/reiniciar/abrir carpeta), al estilo de la pestaña
+"Transferencias" de aMule."""
 
 import asyncio
 
@@ -102,6 +102,7 @@ class DownloadsTab(QWidget):
 
         menu = QMenu(self)
         pause_action = resume_action = cancel_action = delete_action = None
+        restart_action = restart_from_scratch_action = None
         open_folder_action = speed_limit_action = torrent_files_action = None
         move_up_action = move_down_action = verify_action = None
         if downloads:
@@ -111,6 +112,9 @@ class DownloadsTab(QWidget):
                 resume_action = menu.addAction(t("ctx_resume"))
             if any(d.state not in (DownloadState.COMPLETED, DownloadState.CANCELLED) for d in downloads):
                 cancel_action = menu.addAction(t("ctx_cancel"))
+            if any(d.state == DownloadState.CANCELLED for d in downloads):
+                restart_action = menu.addAction(t("ctx_restart"))
+                restart_from_scratch_action = menu.addAction(t("ctx_restart_from_scratch"))
             delete_action = menu.addAction(t("ctx_delete"))
             speed_limit_action = menu.addAction(t("ctx_speed_limit"))
             if (
@@ -154,6 +158,14 @@ class DownloadsTab(QWidget):
         elif action == cancel_action:
             cancellable = [d for d in downloads if d.state not in (DownloadState.COMPLETED, DownloadState.CANCELLED)]
             self._confirm_and_cancel(cancellable)
+        elif action == restart_action:
+            for download in downloads:
+                if download.state == DownloadState.CANCELLED:
+                    asyncio.ensure_future(self._manager.restart(download))
+        elif action == restart_from_scratch_action:
+            for download in downloads:
+                if download.state == DownloadState.CANCELLED:
+                    asyncio.ensure_future(self._manager.restart(download, from_scratch=True))
         elif action == delete_action:
             self._confirm_and_delete(downloads)
         elif action == open_folder_action:

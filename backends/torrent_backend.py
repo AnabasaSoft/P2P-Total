@@ -424,9 +424,16 @@ class TorrentBackend(NetworkBackend):
             download.state = DownloadState.DOWNLOADING
 
     async def cancel_download(self, download: Download) -> None:
+        """No borra los datos ya descargados del disco (a diferencia de
+        antes, que pasaba `lt.session.delete_files`): igual que en las
+        otras cuatro redes, cancelar solo detiene la transferencia y
+        deja el contenido parcial tal cual, para poder "Iniciar" después
+        y retomarlo desde donde se quedó en vez de perderlo. Borrar de
+        verdad el contenido en disco es cosa de la acción explícita
+        "Borrar descarga (y archivos)" (`DownloadManager.delete`)."""
         entry = self._find_entry(download)
         if entry and self._session:
-            self._session.remove_torrent(entry["handle"], lt.session.delete_files)
+            self._session.remove_torrent(entry["handle"])
             del self._active[str(entry["handle"].info_hash())]
             download.state = DownloadState.CANCELLED
 

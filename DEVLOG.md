@@ -2348,6 +2348,73 @@ integración de `reattach_active_downloads()` contra SQLite real
 confirmando que solo reengancha las descargas activas de la red
 indicada, ignorando las completadas y las de otras redes.
 
+### Diálogo "Acerca de": enlace a GitHub y correo de contacto
+
+A petición del usuario, `gui/widgets/about_dialog.py` muestra ahora,
+bajo el texto descriptivo, un `QLabel` en HTML enriquecido
+(`setTextFormat(RichText)` + `setOpenExternalLinks(True)`) con el
+enlace al repositorio (`https://github.com/AnabasaSoft/P2P-Total`) y
+al correo de contacto (`anabasasoft@gmail.com`, como `mailto:`), ambos
+clicables. Las etiquetas (`about_github_label`/`about_email_label`)
+están traducidas en los 13 idiomas de `gui/i18n.py`.
+
+### "Iniciar"/"Reiniciar" para descargas canceladas (las 5 redes)
+
+Segunda petición del usuario sobre el mismo menú contextual de la
+pestaña Transferencias: para una descarga en estado Cancelada, dos
+acciones nuevas — "Iniciar" retoma la descarga desde donde se quedó
+(el contenido parcial en disco se deja tal cual) y "Reiniciar" la
+retoma desde 0 (borra antes lo ya descargado). Para que "Iniciar"
+funcionara hubo que corregir antes una inconsistencia real detectada
+en el código: `TorrentBackend.cancel_download()` era la única de las
+5 redes que borraba los datos parciales del disco al cancelar (vía
+`lt.session.delete_files`); ahora las 5 backends cancelan igual —
+solo detienen la transferencia sin tocar el disco, dejando el borrado
+real para la acción explícita "Borrar descarga (y archivos)"
+(`DownloadManager.delete`). Ambos botones reutilizan tal cual el
+mismo `NetworkBackend.reattach_download()` ya validado en el arreglo
+de reanudación tras reiniciar la app (ver más arriba), a través de un
+método nuevo `DownloadManager.restart(download, from_scratch=bool)`.
+Nuevas claves i18n `ctx_restart`/`ctx_restart_from_scratch` en los 13
+idiomas. Validado con una prueba aislada (backend falso + SQLite
+temporal) que cubre los tres casos: "Iniciar" conserva el fichero
+parcial y el progreso ya descargado, "Reiniciar" borra el fichero y
+pone `downloaded_bytes` a 0, y llamar a `restart()` con la red
+desconectada lanza un `RuntimeError` claro en vez de fallar en
+silencio.
+
+### Control de versión: v1.0 y aviso de actualización contra GitHub
+
+A petición del usuario, el proyecto pasa a tener una versión formal
+(`VERSION = "1.0"` en `core/version.py`, nuevo fichero, mostrada ya en
+el diálogo "Acerca de") y una comprobación automática de
+actualizaciones al arrancar la GUI. `core/update_checker.py` consulta
+`GET https://api.github.com/repos/AnabasaSoft/P2P-Total/releases/latest`
+reutilizando el cliente HTTP propio del proyecto
+(`core/http_client.http_get`, sin librerías de terceros, respetando
+también el proxy configurado por el usuario si lo hay) y compara el
+`tag_name` del último release (p. ej. `v1.2.0`) con `VERSION`,
+componente a componente. Si hay una versión más reciente,
+`MainWindow` (vía `asyncio.ensure_future` al final de su `__init__`,
+sin bloquear el arranque) muestra un `UpdateAvailableDialog`
+(`gui/widgets/update_dialog.py`, un `QMessageBox` con botones
+"Descargar" y "Cancelar") — "Descargar" abre la página del release en
+el navegador con `QDesktopServices.openUrl`, "Cancelar" simplemente
+cierra el aviso. Cualquier fallo de red, límite de peticiones
+anónimas de la API de GitHub o ausencia de releases publicados se
+traga en silencio (`check_for_update` devuelve `None`) para que nunca
+pueda impedir que la app arranque. Nuevas claves i18n
+(`about_version`, `update_dialog_title`, `update_dialog_text`,
+`update_dialog_download`, `update_dialog_cancel`) en los 13 idiomas.
+Validado: una prueba aislada sustituyendo `http_get` por una versión
+falsa cubre detectar una versión más nueva, no ofrecer nada si
+coincide con la actual, tragar en silencio un fallo simulado de red, y
+la comparación numérica de versiones (`1.10.0 > 1.9.9`, `2.0 > 1.0`);
+y una llamada real contra la API de GitHub confirma que, al no existir
+todavía ningún release publicado en el repositorio, la API responde
+`404` y el código lo maneja sin error (no ofrece actualización, como
+es de esperar hasta que se publique el primer release).
+
 ### Arreglo: "Salir" desde la bandeja dejaba el proceso zombi (BitTorrent)
 
 Bug real reportado por el usuario: al pulsar "Salir" en el menú

@@ -18,6 +18,7 @@ from core.config import load_config, save_config
 from core.models import Download, DownloadState, Network, SearchResult
 from core.download_manager import DownloadManager
 from core.saved_search_manager import SavedSearchManager
+from core.update_checker import check_for_update
 from core.watch_folder import WatchFolderManager
 from gui import theme
 from gui.connection_manager import STATUS_CONNECTED, STATUS_CONNECTING, ConnectionManager
@@ -33,6 +34,7 @@ from gui.widgets.network_tab import NetworkTab
 from gui.widgets.search_tab import SearchTab
 from gui.widgets.settings_dialog import SettingsDialog
 from gui.widgets.stats_tab import StatsTab
+from gui.widgets.update_dialog import UpdateAvailableDialog
 
 
 class MainWindow(QMainWindow):
@@ -91,6 +93,15 @@ class MainWindow(QMainWindow):
         self._build_tray_icon()
         self._notified_download_ids: set[int] = set()
         self._download_manager.on_progress(self._on_progress_for_notifications)
+
+        asyncio.ensure_future(self._check_for_update())
+
+    async def _check_for_update(self) -> None:
+        config = load_config()
+        result = await check_for_update(proxy=config.proxy)
+        if result is not None:
+            new_version, release_url = result
+            UpdateAvailableDialog(new_version, release_url, self).exec()
 
     # ---- Menú ----
 

@@ -184,6 +184,34 @@ class DownloadManager:
         backend = BackendRegistry.get(download.network)
         await backend.cancel_download(download)
 
+    async def restart(self, download: Download, from_scratch: bool = False) -> None:
+        """Reengancha una descarga cancelada, reutilizando exactamente el
+        mismo `backend.reattach_download()` ya validado que usa
+        `reattach_active_downloads` tras reconectar una red — solo que
+        aquí se dispara a demanda desde el menú contextual de la pestaña
+        Transferencias ("Iniciar"/"Reiniciar") en vez de al reconectar.
+        Con `from_scratch=False` ("Iniciar") se deja tal cual el
+        contenido ya descargado en disco, para retomarlo desde donde se
+        quedó (cancelar ya no borra archivos, ver
+        `NetworkBackend.cancel_download`); con `from_scratch=True`
+        ("Reiniciar") se borra antes ese contenido y se pone
+        `downloaded_bytes` a 0, para empezar de cero."""
+        backend = BackendRegistry.get(download.network)
+        if backend is None:
+            raise RuntimeError(f"La red {download.network.value} no está conectada")
+        if from_scratch:
+            target = Path(download.dest_path) / download.title
+            if target.is_dir():
+                shutil.rmtree(target, ignore_errors=True)
+            elif target.is_file():
+                target.unlink(missing_ok=True)
+            download.downloaded_bytes = 0
+        download.state = DownloadState.SEARCHING_SOURCES
+        if download.id is not None:
+            database.update_download_progress(download.id, download.downloaded_bytes, download.state)
+            self._retry_attempts.pop(download.id, None)
+        await backend.reattach_download(download)
+
     def set_download_limit(self, download: Download, rate_bps: int) -> None:
         backend = BackendRegistry.get(download.network)
         if backend is not None:
