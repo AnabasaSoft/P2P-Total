@@ -3554,7 +3554,7 @@ búsqueda/descarga; falta la parte social):
           espíritu GPL de gtk-gnutella, estudiado sin copiar para G2) —
           pendiente de confirmación o cambio por el usuario si prefiere
           otra licencia.
-    33.5. **Paquete Linux `.deb`/`.rpm`/AppImage**: creados
+    33.5. ✅ **Paquete Linux `.deb`/`.rpm`/AppImage**: creados
           `packaging/linux/p2p-total.desktop` (validado con
           `desktop-file-validate`, sin errores) y
           `packaging/linux/org.anabasasoft.P2PTotal.metainfo.xml`
@@ -3578,12 +3578,18 @@ búsqueda/descarga; falta la parte social):
           generar `.deb` y `.rpm` a partir de ese mismo build) y
           `packaging/linux/build-appimage.sh` (usa `appimagetool` para
           generar el AppImage) están escritos y cableados al workflow
-          `.github/workflows/build-packages.yml`, pero **no se han
-          podido ejercitar en local** (`fpm` necesita Ruby + rpm +
-          permisos de sistema que no se han instalado en esta máquina a
-          propósito, para no tocar el sistema real del usuario sin
-          permiso) — su validación real queda pendiente de una
-          ejecución del workflow en un runner de GitHub Actions.
+          `.github/workflows/build-packages.yml`. No se pudieron
+          ejercitar en local (`fpm` necesita Ruby + rpm + permisos de
+          sistema que no se instalaron en esta máquina a propósito,
+          para no tocar el sistema real del usuario sin permiso), pero
+          sí se validaron de verdad contra un runner real de GitHub
+          Actions (`ubuntu-latest`) al empujar el tag `v1.0`: el job
+          `linux-packages` de la ejecución
+          `github.com/AnabasaSoft/P2P-Total/actions/runs/32623059623`
+          terminó en verde generando `p2p-total_1.0_amd64.deb`,
+          `p2p-total-1.0-1.x86_64.rpm` y
+          `P2P-Total-1.0-x86_64.AppImage`, los tres adjuntos después a
+          la release `v1.0` real del repositorio.
     33.6. [ ] **Flatpak**: excluido deliberadamente del alcance de esta
           tarea a petición explícita y literal del usuario ("Tiene que
           crear .deb, .rpm. appimage, windows y macos", sin mencionar
@@ -3605,7 +3611,7 @@ búsqueda/descarga; falta la parte social):
           BitTorrent como opcional ahí. El workflow fija Python 3.12
           (`env.PYTHON_VERSION`) por estar dentro de ese rango
           soportado en los tres sistemas operativos.
-    33.8. **Empaquetado Windows** (`.exe`/instalador): escrito
+    33.8. ✅ **Empaquetado Windows** (`.exe`/instalador): escrito
           `packaging/windows/installer.iss` (Inno Setup) con el
           asistente clásico "Siguiente, Siguiente, Instalar" pedido
           explícitamente por el usuario (páginas por defecto: bienvenida,
@@ -3613,23 +3619,33 @@ búsqueda/descarga; falta la parte social):
           escritorio opcional, instalar, finalizar con opción de
           ejecutar la app), usando ya el `.ico` del punto 33.3. Cableado
           en el workflow: instala Inno Setup vía `choco` en el runner
-          `windows-latest` y compila con `ISCC.exe`. **No se ha podido
-          validar en un Windows real todavía** — ni que el propio build
-          de PyInstaller funcione en Windows, ni que `qasync` y los
-          sockets UDP/TCP crudos de las cinco redes se comporten igual
-          sobre el `ProactorEventLoop` de Windows (nunca probado hasta
-          ahora, todo el proyecto se validó solo en Linux) — queda
-          pendiente de una ejecución real del workflow. Sin firma de
-          código, Windows SmartScreen avisará de "editor no reconocido"
-          — asumible para una primera versión.
-    33.9. **Empaquetado macOS** (`.app`/`.dmg`): añadido el bloque
+          `windows-latest` y compila con `ISCC.exe`. Validado de verdad
+          contra un runner real de GitHub Actions (`windows-latest`) al
+          empujar el tag `v1.0`: el job `windows-installer` de la
+          ejecución `.../actions/runs/32623059623` terminó en verde en
+          1m47s — el build de PyInstaller sí funciona en Windows y
+          `ISCC.exe` compiló `P2P-Total-Setup-1.0.exe` sin errores,
+          adjuntado después a la release `v1.0` real. Queda sin probar
+          (fuera del alcance de un runner de CI) el comportamiento en
+          caliente de `qasync` y los sockets UDP/TCP crudos de las cinco
+          redes sobre el `ProactorEventLoop` de Windows al ejecutar
+          realmente la app instalada — nunca se ha corrido el programa
+          en un Windows real, solo se ha validado que compila y empaqueta.
+          Sin firma de código, Windows SmartScreen avisará de "editor no
+          reconocido" — asumible para una primera versión.
+    33.9. ✅ **Empaquetado macOS** (`.app`/`.dmg`): añadido el bloque
           `BUNDLE` al spec de PyInstaller (usando el `.icns` del punto
           33.3) y `packaging/macos/build-dmg.sh` (empaqueta el `.app` en
           un `.dmg` solo con `hdiutil`, ya incluido en macOS, sin
           dependencias externas). Cableado en el workflow sobre el
-          runner `macos-latest`. **No se ha podido validar en un macOS
-          real todavía** (este entorno de desarrollo es Linux) — queda
-          pendiente de una ejecución real del workflow. Sin firma ni
+          runner `macos-latest`. Validado de verdad contra un runner
+          real de GitHub Actions (`macos-latest`) al empujar el tag
+          `v1.0`: el job `macos-dmg` de la ejecución
+          `.../actions/runs/32623059623` terminó en verde en 46s,
+          generando `P2P-Total-1.0.dmg` sin errores, adjuntado después a
+          la release `v1.0` real. Igual que en 33.8, queda sin probar el
+          comportamiento en caliente de la app ya instalada en un macOS
+          real (fuera del alcance de un runner de CI). Sin firma ni
           notarización de Apple, Gatekeeper bloqueará o avisará al abrir
           la app — mismo caso que Windows, asumible para una primera
           versión.
@@ -3649,10 +3665,28 @@ búsqueda/descarga; falta la parte social):
     preinstalado en los runners de Windows) y la publicación del release
     se hace con `gh`, ya preinstalado en todos los runners — mismo
     espíritu de minimizar dependencias externas que el resto del
-    proyecto. Pendiente el siguiente paso: empujar esta rama y lanzar el
-    workflow manualmente para validar de verdad los tres builds contra
-    runners reales de GitHub Actions antes de dar 33.5/33.8/33.9 por
-    completados con el mismo nivel de confianza que 33.7.
+    proyecto.
+
+    Validado de verdad contra runners reales de GitHub Actions: antes de
+    lanzar nada se subió el permiso por defecto de las Actions del
+    repositorio de "solo lectura" a "lectura y escritura" (`gh api -X
+    PUT repos/.../actions/permissions/workflow -f
+    default_workflow_permissions=write`), como refuerzo del bloque
+    `permissions: contents: write` que ya tenía declarado el job
+    `release`, para no arriesgarse a que la publicación del release
+    fallara por falta de permisos del `GITHUB_TOKEN`. Con eso corregido,
+    se creó y empujó el tag `v1.0` real, disparando la ejecución
+    `github.com/AnabasaSoft/P2P-Total/actions/runs/32623059623`: los
+    cinco jobs (`version`, `linux-packages`, `windows-installer`,
+    `macos-dmg`, `release`) terminaron en verde sin ningún fallo, y la
+    release `github.com/AnabasaSoft/P2P-Total/releases/tag/v1.0` quedó
+    publicada con los cinco paquetes adjuntos
+    (`p2p-total_1.0_amd64.deb`, `p2p-total-1.0-1.x86_64.rpm`,
+    `P2P-Total-1.0-x86_64.AppImage`, `P2P-Total-Setup-1.0.exe`,
+    `P2P-Total-1.0.dmg`). Con esto, 33.5/33.8/33.9 quedan completados con
+    el mismo nivel de confianza que 33.7. Sigue pendiente el punto 33.6
+    (Flatpak), excluido deliberadamente del alcance de esta tarea a la
+    espera de que el usuario confirme si quiere completarlo también.
 
     Nota de alcance para 33.7-33.9: en el momento de escribir este
     punto, `README.md` (línea 3) describe el proyecto como "Cliente P2P
