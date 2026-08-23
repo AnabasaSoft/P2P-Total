@@ -51,10 +51,15 @@ modules:
         exec /app/lib/p2p-total/p2p-total "$@"
         WRAPPER
       - chmod +x /app/bin/p2p-total
+      # Nota: no se puede usar un fichero intermedio en /tmp entre dos
+      # build-commands distintos, porque flatpak-builder ejecuta cada
+      # línea en una invocación de sandbox separada y /tmp no persiste
+      # entre ellas (a diferencia de /app, que sí es el mismo destino en
+      # todas) - de ahí escribir directamente en /app en un solo paso.
+      - install -d /app/share/applications
       - sed 's/Icon=p2p-total/Icon=org.anabasasoft.P2PTotal/' p2p-total.desktop
-        > /tmp/org.anabasasoft.P2PTotal.desktop
-      - install -Dm644 /tmp/org.anabasasoft.P2PTotal.desktop
-        /app/share/applications/org.anabasasoft.P2PTotal.desktop
+        > /app/share/applications/org.anabasasoft.P2PTotal.desktop
+      - chmod 644 /app/share/applications/org.anabasasoft.P2PTotal.desktop
       - install -Dm644 org.anabasasoft.P2PTotal.metainfo.xml
         /app/share/metainfo/org.anabasasoft.P2PTotal.metainfo.xml
       - install -Dm644 p2p-total.png
