@@ -39,8 +39,9 @@ modules:
         path: p2p-total.desktop
       - type: file
         path: org.anabasasoft.P2PTotal.metainfo.xml
-      - type: file
-        path: icons/hicolor/256x256/apps/p2p-total.png
+      - type: dir
+        path: icons/hicolor
+        dest: hicolor-icons
     build-commands:
       - mkdir -p /app/lib/p2p-total
       - cp -r pyinstaller-dist/. /app/lib/p2p-total/
@@ -51,16 +52,15 @@ modules:
         exec /app/lib/p2p-total/p2p-total "$@"
         WRAPPER
       - chmod +x /app/bin/p2p-total
-      # Nota: no se puede usar un fichero intermedio en /tmp entre dos
-      # build-commands distintos, porque flatpak-builder ejecuta cada
-      # línea en una invocación de sandbox separada y /tmp no persiste
-      # entre ellas (a diferencia de /app, que sí es el mismo destino en
-      # todas) - de ahí escribir directamente en /app en un solo paso.
-      - install -d /app/share/applications
-      - sed 's/Icon=p2p-total/Icon=org.anabasasoft.P2PTotal/' p2p-total.desktop
-        > /app/share/applications/org.anabasasoft.P2PTotal.desktop
-      - chmod 644 /app/share/applications/org.anabasasoft.P2PTotal.desktop
+      # Mismo nombre de icono y de fichero .desktop que .deb/.rpm/AppImage
+      # (Icon=p2p-total, sin renombrar a org.anabasasoft.P2PTotal): así
+      # `appstreamcli compose` (que exige un <icon> explícito en el
+      # metainfo, más estricto que `appstreamcli validate`, usado en el
+      # punto 33.5) encuentra el icono con el mismo nombre declarado en
+      # <icon type="stock">p2p-total</icon>.
+      - install -Dm644 p2p-total.desktop
+        /app/share/applications/org.anabasasoft.P2PTotal.desktop
       - install -Dm644 org.anabasasoft.P2PTotal.metainfo.xml
         /app/share/metainfo/org.anabasasoft.P2PTotal.metainfo.xml
-      - install -Dm644 p2p-total.png
-        /app/share/icons/hicolor/256x256/apps/org.anabasasoft.P2PTotal.png
+      - mkdir -p /app/share/icons
+      - cp -r hicolor-icons /app/share/icons/hicolor

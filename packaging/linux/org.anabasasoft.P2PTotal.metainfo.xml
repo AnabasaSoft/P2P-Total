@@ -11,6 +11,7 @@
   <url type="homepage">https://github.com/AnabasaSoft/P2P-Total</url>
   <url type="bugtracker">https://github.com/AnabasaSoft/P2P-Total/issues</url>
   <launchable type="desktop-id">p2p-total.desktop</launchable>
+  <icon type="stock">p2p-total</icon>
   <description>
     <p>
       P2P Total es un cliente P2P multi-red con una única interfaz gráfica,
