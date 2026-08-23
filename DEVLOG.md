@@ -3160,12 +3160,13 @@ cualquier `.torrent` que aparezca en una carpeta configurada) y 27
 completar, hoy solo en BitTorrent vía el recheck nativo de libtorrent),
 28 (más idiomas en `gui/i18n.py`), 29 (búsqueda de torrents por nombre
 vía apibay.org), 30 (barra de progreso de colores estilo aMule), 31
-(splash de AnabasaSoft al inicio) y 32 (icono en la bandeja de
-aplicaciones, ampliando el punto 22) también se completaron ya (ver
-"Estado actual"), así que la posición actual en el backlog es: el
-punto 33 (empaquetado y distribución multiplataforma — `.rpm`, `.deb`,
-AppImage, Flatpak, Windows, macOS), resolviendo sus sub-puntos 33.1 a
-33.9 en el mismo orden estricto, uno detrás de otro (el 21 ya está
+(splash de AnabasaSoft al inicio), 32 (icono en la bandeja de
+aplicaciones, ampliando el punto 22) y 33 (empaquetado y distribución
+multiplataforma — `.rpm`, `.deb`, AppImage, Flatpak, Windows, macOS,
+sub-puntos 33.1 a 33.9) también se completaron ya (ver "Estado
+actual"), así que la posición actual en el backlog es: el punto 34
+(mejoras post-empaquetado, ver más abajo), resolviendo sus sub-puntos
+en el mismo orden estricto, uno detrás de otro (el 21 ya está
 completo).
 
 **Compartir y subir archivos** (el hueco más grande, con diferencia):
@@ -3748,3 +3749,46 @@ búsqueda/descarga; falta la parte social):
     macOS) — se deja así a propósito por simplicidad mientras no se
     demuestre que hace falta más, no está en la lista de sub-puntos de
     arriba porque no bloquea ningún empaquetado.
+
+34. Mejoras post-empaquetado (estudiado 2026-08-23, a petición del
+    usuario tras completar el punto 33: "lista de ideas de mejora o a
+    implementar?" → "añade todo a una lista de tareas menos la firma
+    de windows/macos"). Se excluye deliberadamente de esta lista la
+    firma de código de Windows/macOS (mencionada como pendiente en
+    33.8/33.9) por petición explícita del usuario, y también publicar
+    el `.flatpak` en Flathub: se investigó la política real de Flathub
+    a petición del propio usuario ("creo que flathub no permite
+    aplicaciones creadas con ia, no?") y, en efecto, desde el 29 de
+    mayo de 2026 Flathub prohíbe cualquier envío nuevo con código,
+    documentación o metadatos generados o asistidos por IA — incluido
+    el propio PR de envío —, con la única excepción discrecional de
+    "proyectos maduros y bien mantenidos" que no es una vía garantizada;
+    como P2P Total se ha desarrollado con asistencia de IA de principio
+    a fin, intentar publicarlo en Flathub hoy caería directamente bajo
+    esa prohibición, así que no se incluye como tarea. Pendientes de
+    resolver en orden estricto:
+
+    34.1. Mecanismo de auto-actualización real: hoy `core/update_checker.py`
+          (ver "Control de versión: v1.0 y aviso de actualización contra
+          GitHub" en "Estado actual") solo avisa con un enlace a la
+          release de GitHub cuando hay una versión nueva, sin descargar
+          ni instalar nada — falta la descarga y sustitución automática
+          del paquete instalado (o al menos del build "onedir").
+    34.2. Suite de tests automatizados: el proyecto no tiene ningún test
+          hoy (ni unitario ni de integración); toda la validación hasta
+          ahora ha sido manual contra infraestructura real de cada red.
+    34.3. Cifrado de protocolo BitTorrent (MSE/PE) y soporte de µTP,
+          hoy ausentes del backend de BitTorrent.
+    34.4. Soporte completo de IPv6 en Soulseek, Gnutella2 y eD2k/Kad: el
+          punto 19 de este mismo backlog ya cubrió IPv6 en su momento,
+          pero el formato binario de direcciones de esos tres protocolos
+          sigue limitando el soporte real — pendiente de revisar caso
+          por caso qué parte concreta del código de cada backend impone
+          esa limitación.
+    34.5. Planificador de ancho de banda por franja horaria (limitar la
+          velocidad de subida/bajada según la hora del día), sobre los
+          límites de velocidad ya existentes del punto 2.
+    34.6. Control remoto / API web para gestionar descargas sin abrir la
+          GUI de escritorio.
+    34.7. Mejoras de accesibilidad en la GUI: soporte de lector de
+          pantalla y navegación completa por teclado.
