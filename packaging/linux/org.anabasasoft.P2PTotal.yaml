@@ -1,0 +1,61 @@
+# Manifiesto de Flatpak para generar un ".flatpak" autónomo (bundle de un
+# solo fichero, instalable con "flatpak install fichero.flatpak" sin pasar
+# por ninguna tienda) — punto 33.6 del backlog, ver DEVLOG.md. No apunta a
+# publicarse en Flathub, así que en vez de recompilar Python/PyQt6/
+# libtorrent dentro del sandbox de flatpak-builder (lo que exigiría acceso
+# a red durante el build y no está garantizado por Flathub), se reutiliza
+# tal cual el build "onedir" ya generado por PyInstaller
+# (packaging/p2p-total.spec -> dist/p2p-total/), tratándolo como un
+# binario ya compilado que solo hay que copiar dentro de /app.
+app-id: org.anabasasoft.P2PTotal
+runtime: org.freedesktop.Platform
+runtime-version: "23.08"
+sdk: org.freedesktop.Sdk
+command: p2p-total
+
+finish-args:
+  - --share=ipc
+  - --share=network
+  - --socket=x11
+  - --socket=wayland
+  - --device=dri
+  # El resto de paquetes (.deb/.rpm/AppImage) leen y escriben directamente
+  # en el $HOME real del usuario (config en ~/.config/p2p-total, descargas
+  # en ~/Descargas/P2P-Total). Sin este permiso, dentro del sandbox de
+  # Flatpak "$HOME" apuntaría a ~/.var/app/org.anabasasoft.P2PTotal en vez
+  # de al home real, dando un comportamiento distinto solo en esta
+  # variante — se concede para mantener el mismo comportamiento en las
+  # cinco variantes de paquete.
+  - --filesystem=home
+
+modules:
+  - name: p2p-total
+    buildsystem: simple
+    sources:
+      - type: dir
+        path: ../../dist/p2p-total
+        dest: pyinstaller-dist
+      - type: file
+        path: p2p-total.desktop
+      - type: file
+        path: org.anabasasoft.P2PTotal.metainfo.xml
+      - type: file
+        path: icons/hicolor/256x256/apps/p2p-total.png
+    build-commands:
+      - mkdir -p /app/lib/p2p-total
+      - cp -r pyinstaller-dist/. /app/lib/p2p-total/
+      - install -d /app/bin
+      - |
+        cat > /app/bin/p2p-total <<'WRAPPER'
+        #!/bin/sh
+        exec /app/lib/p2p-total/p2p-total "$@"
+        WRAPPER
+      - chmod +x /app/bin/p2p-total
+      - sed 's/Icon=p2p-total/Icon=org.anabasasoft.P2PTotal/' p2p-total.desktop
+        > /tmp/org.anabasasoft.P2PTotal.desktop
+      - install -Dm644 /tmp/org.anabasasoft.P2PTotal.desktop
+        /app/share/applications/org.anabasasoft.P2PTotal.desktop
+      - install -Dm644 org.anabasasoft.P2PTotal.metainfo.xml
+        /app/share/metainfo/org.anabasasoft.P2PTotal.metainfo.xml
+      - install -Dm644 p2p-total.png
+        /app/share/icons/hicolor/256x256/apps/org.anabasasoft.P2PTotal.png

@@ -1,17 +1,19 @@
 name: Construir paquetes
 
-# Genera automáticamente los instaladores de las cinco plataformas del
-# punto 33 del backlog (ver DEVLOG.md): .deb, .rpm y AppImage en Linux,
-# instalador de Windows tipo "Siguiente, Siguiente, Instalar" (Inno Setup)
-# y .dmg en macOS. Se dispara al subir un tag "v*" (publica los paquetes
-# como release de GitHub) o manualmente desde la pestaña Actions (solo
-# genera los artefactos, sin publicar release, para poder probar sin
-# necesidad de crear un tag).
+# Genera automáticamente los instaladores de las seis variantes del punto
+# 33 del backlog (ver DEVLOG.md): .deb, .rpm, AppImage y .flatpak
+# autónomo (bundle de un solo fichero, sin publicarse en Flathub) en
+# Linux, instalador de Windows tipo "Siguiente, Siguiente, Instalar"
+# (Inno Setup) y .dmg en macOS. Se dispara al subir un tag "v*" (publica
+# los paquetes como release de GitHub) o manualmente desde la pestaña
+# Actions (solo genera los artefactos, sin publicar release, para poder
+# probar sin necesidad de crear un tag).
 #
 # Deliberadamente sin ninguna GitHub Action de terceros más allá de las
 # oficiales (actions/checkout, actions/setup-python, actions/upload-
 # artifact, actions/download-artifact): Inno Setup se instala vía
-# chocolatey (ya viene preinstalado en los runners de Windows) y la
+# chocolatey (ya viene preinstalado en los runners de Windows), flatpak/
+# flatpak-builder se instalan vía apt en el runner de Linux, y la
 # publicación del release se hace con `gh`, ya preinstalado en todos los
 # runners — mismo espíritu del proyecto de minimizar dependencias.
 
@@ -76,6 +78,35 @@ jobs:
             *.rpm
             *.AppImage
 
+  linux-flatpak:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Instalar dependencias Python
+        run: pip install -r requirements.txt pyinstaller
+      - name: Construir build PyInstaller (onedir)
+        run: pyinstaller packaging/p2p-total.spec --noconfirm
+      - name: Instalar flatpak y flatpak-builder
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak remote-add --if-not-exists --user flathub \
+            https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub \
+            org.freedesktop.Platform//23.08 org.freedesktop.Sdk//23.08
+      - name: Construir el .flatpak autónomo
+        run: packaging/linux/build-flatpak.sh "$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: linux-flatpak
+          path: "*.flatpak"
+
   windows-installer:
     needs: version
     runs-on: windows-latest
@@ -127,7 +158,7 @@ jobs:
 
   release:
     if: startsWith(github.ref, 'refs/tags/v')
-    needs: [version, linux-packages, windows-installer, macos-dmg]
+    needs: [version, linux-packages, linux-flatpak, windows-installer, macos-dmg]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -141,6 +172,7 @@ jobs:
         run: |
           gh release create "${GITHUB_REF#refs/tags/}" \
             artifacts/linux-packages/* \
+            artifacts/linux-flatpak/* \
             artifacts/windows-installer/* \
             artifacts/macos-dmg/* \
             --repo "${GITHUB_REPOSITORY}" \
