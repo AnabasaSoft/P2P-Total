@@ -22,7 +22,8 @@
 
 ## Qué es P2P Total
 
-**P2P Total** es un cliente P2P de escritorio para Linux que reúne, en
+**P2P Total** es un cliente P2P de escritorio para Linux, Windows y
+macOS que reúne, en
 una sola aplicación con una sola interfaz, cinco redes de intercambio
 de ficheros que normalmente exigirían cinco programas distintos:
 **BitTorrent, Soulseek, DC++ (NMDC), Gnutella2 y eMule/Kad (eD2k +
@@ -169,6 +170,47 @@ velocidad globales y por descarga.
 
 ## Instalación
 
+### Paquete precompilado (recomendado)
+
+Cada [release de GitHub](https://github.com/AnabasaSoft/P2P-Total/releases/latest)
+incluye un instalador para cada sistema — no hace falta tener Python
+instalado, cada paquete lleva ya todo lo necesario:
+
+**Linux**
+
+```bash
+# Debian / Ubuntu y derivadas
+sudo dpkg -i p2p-total_*.deb
+
+# Fedora / openSUSE / RHEL y derivadas
+sudo rpm -i p2p-total-*.rpm
+
+# AppImage — cualquier distro, sin instalar nada en el sistema
+chmod +x P2P-Total-*.AppImage
+./P2P-Total-*.AppImage
+
+# Flatpak — bundle autónomo, sin publicar en Flathub
+flatpak install P2P-Total-*.flatpak
+```
+
+**Windows**
+
+Descarga `P2P-Total-Setup-*.exe` y ejecútalo: es el instalador clásico
+"Siguiente, Siguiente, Instalar" (Inno Setup). Al no llevar firma
+digital de código, Windows SmartScreen puede avisar de "editor no
+reconocido" la primera vez — es esperable en una primera versión sin
+firmar; en "Más información" → "Ejecutar de todas formas" continúa la
+instalación con normalidad.
+
+**macOS**
+
+Descarga `P2P-Total-*.dmg`, ábrelo y arrastra `P2P Total.app` a la
+carpeta Aplicaciones. Al no estar firmada ni notarizada por Apple,
+Gatekeeper bloqueará la primera apertura — clic derecho sobre la
+app → "Abrir" para confirmar la excepción una única vez.
+
+### Desde el código fuente (desarrollo)
+
 Requisitos: Python 3.11+ y las dependencias de `requirements.txt`
 (PyQt6, qasync, keyring, libtorrent; el resto de redes no necesitan
 ninguna librería externa, están implementadas sobre `asyncio` puro).
@@ -183,11 +225,6 @@ python main.py gui          # interfaz gráfica
 python main.py config        # configuración interactiva por terminal
 python main.py download ...  # descarga por línea de comandos
 ```
-
-Por ahora el proyecto se distribuye ejecutando el código fuente
-directamente; los paquetes instalables (`.deb`, `.rpm`, AppImage,
-Flatpak, y los ejecutables de Windows/macOS) están en curso — ver
-[Estado del proyecto y hoja de ruta](#estado-del-proyecto-y-hoja-de-ruta).
 
 ## Configuración y seguridad
 
@@ -247,12 +284,18 @@ la validación, en `DEVLOG.md`) — el resto de funciones (búsqueda,
 Browse Host, servir subidas) sí está validado contra red real, y
 pausar/reanudar/cancelar se validó contra un servidor sintético propio.
 
-Lo único pendiente ahora mismo es el **empaquetado y la distribución
-multiplataforma** (`.deb`/`.rpm`/AppImage para Linux, Flatpak, y los
-ejecutables de Windows/macOS), en curso siguiendo un orden estricto de
-sub-tareas. El registro técnico completo — arquitectura a fondo, notas
-de protocolo de cada red, cada bug real encontrado y cómo se validó
-cada función, y el backlog detallado punto por punto — vive en
+El **empaquetado y la distribución multiplataforma** están completos y
+validados contra runners reales de GitHub Actions: `.deb`, `.rpm`,
+AppImage y un `.flatpak` autónomo para Linux, instalador clásico para
+Windows (Inno Setup) y `.dmg` para macOS, descargables desde la
+[página de releases](https://github.com/AnabasaSoft/P2P-Total/releases/latest).
+Los seis paquetes se generan y comprueban solos en cada versión — lo
+que todavía no se ha probado es el comportamiento en caliente de la
+app ya instalada en un Windows o macOS real (el proyecto se ha
+desarrollado y validado en Linux; ver el detalle y las salvedades en
+`DEVLOG.md`). El registro técnico completo — arquitectura a fondo,
+notas de protocolo de cada red, cada bug real encontrado y cómo se
+validó cada función, y el backlog detallado punto por punto — vive en
 [`DEVLOG.md`](DEVLOG.md).
 
 ## Aviso legal
