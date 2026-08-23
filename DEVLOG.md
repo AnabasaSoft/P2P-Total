@@ -3590,16 +3590,63 @@ búsqueda/descarga; falta la parte social):
           `p2p-total-1.0-1.x86_64.rpm` y
           `P2P-Total-1.0-x86_64.AppImage`, los tres adjuntos después a
           la release `v1.0` real del repositorio.
-    33.6. [ ] **Flatpak**: excluido deliberadamente del alcance de esta
-          tarea a petición explícita y literal del usuario ("Tiene que
-          crear .deb, .rpm. appimage, windows y macos", sin mencionar
-          Flatpak), aunque la propia regla de este backlog pide
-          resolver los sub-puntos en orden estricto sin saltarse
-          ninguno. Se deja aquí anotado el conflicto en vez de
-          resolverlo en silencio en cualquiera de los dos sentidos:
-          queda pendiente por si el usuario confirma más adelante que
-          quiere completarlo también, retomando entonces el orden
-          estricto en este mismo punto.
+    33.6. ✅ **Flatpak**: excluido inicialmente del alcance de la primera
+          tarea de empaquetado a petición explícita y literal del
+          usuario ("Tiene que crear .deb, .rpm. appimage, windows y
+          macos", sin mencionar Flatpak), retomado después en una
+          petición aparte tras confirmar el usuario que solo quería un
+          ".flatpak" autónomo, sin publicarlo en Flathub (evita el
+          proceso de revisión de un PR contra `flathub/flathub`, que
+          exigiría además recompilar Python/PyQt6/libtorrent desde cero
+          y sin red dentro del sandbox de `flatpak-builder`, en vez de
+          reutilizar directamente el build "onedir" de PyInstaller como
+          hacen ya `.deb`/`.rpm`/AppImage). Añadidos
+          `packaging/linux/org.anabasasoft.P2PTotal.yaml` (manifiesto:
+          runtime `org.freedesktop.Platform//23.08`, copia el build
+          "onedir" ya generado dentro de `/app/lib/p2p-total` con un
+          script `/app/bin/p2p-total` como lanzador, mismo `Icon=`/
+          `.desktop` que el resto de variantes para no duplicar
+          metadatos) y `packaging/linux/build-flatpak.sh` (invoca
+          `flatpak-builder` + `flatpak build-bundle`, con
+          `--runtime-repo` apuntando a Flathub para que el runtime se
+          descargue solo si al usuario final le falta), cableados en un
+          nuevo job `linux-flatpak` del workflow. Dos fallos reales
+          encontrados y corregidos en runners de GitHub Actions
+          (workflow disparado a mano con `workflow_dispatch`, sin tocar
+          el tag `v1.0`, para no crear una release nueva solo para
+          probar): (1) un primer intento escribía el `.desktop` con el
+          icono reescrito en `/tmp` en un `build-command` y lo instalaba
+          en el siguiente — falló con "cannot stat" porque
+          `flatpak-builder` ejecuta cada línea de `build-commands` en
+          una invocación de sandbox distinta y `/tmp` no persiste entre
+          ellas (a diferencia de `/app`, que sí); arreglado escribiendo
+          directamente en `/app` en un único paso, sin fichero
+          intermedio; (2) con eso resuelto, `appstreamcli compose` (el
+          paso interno de `flatpak-builder` que genera el catálogo
+          appstream de la app, más estricto que el `appstreamcli
+          validate` ya usado en el punto 33.5) rechazaba el componente
+          con `gui-app-without-icon` porque
+          `org.anabasasoft.P2PTotal.metainfo.xml` no tenía ningún
+          `<icon>` declarado — arreglado añadiendo `<icon
+          type="stock">p2p-total</icon>` al metainfo compartido
+          (revalidado con `appstreamcli validate`, sigue sin errores) y
+          dejando el `.desktop`/icono dentro del flatpak con el mismo
+          nombre `p2p-total` que ya usan `.deb`/`.rpm`/AppImage en vez
+          de renombrarlo a `org.anabasasoft.P2PTotal`, para que el
+          nombre declarado en el `<icon>` y el fichero instalado
+          coincidan. Con ambos arreglos, la ejecución
+          `github.com/AnabasaSoft/P2P-Total/actions/runs/32624457472`
+          terminó en verde generando
+          `P2P-Total-0.0.0-dev-x86_64.flatpak` (55 MB, en línea con el
+          resto de builds "onedir"). No se ha instalado el bundle en
+          este entorno para probarlo de verdad en caliente (descargaría
+          el runtime `org.freedesktop.Platform` de Flathub, varios
+          cientos de MB, sin que el usuario lo pidiera explícitamente)
+          — queda pendiente si el usuario quiere esa validación extra.
+          El job se adjunta también al job `release` (junto a
+          `linux-packages`/`windows-installer`/`macos-dmg`), así que a
+          partir del próximo tag `v*` la release incluirá el `.flatpak`
+          automáticamente.
     33.7. ✅ **Riesgo de `libtorrent` en Windows/macOS**: comprobado
           contra el índice real de PyPI (`pypi.org/pypi/libtorrent/
           json`) para la versión estable 2.0.11: sí hay wheels
@@ -3684,9 +3731,9 @@ búsqueda/descarga; falta la parte social):
     (`p2p-total_1.0_amd64.deb`, `p2p-total-1.0-1.x86_64.rpm`,
     `P2P-Total-1.0-x86_64.AppImage`, `P2P-Total-Setup-1.0.exe`,
     `P2P-Total-1.0.dmg`). Con esto, 33.5/33.8/33.9 quedan completados con
-    el mismo nivel de confianza que 33.7. Sigue pendiente el punto 33.6
-    (Flatpak), excluido deliberadamente del alcance de esta tarea a la
-    espera de que el usuario confirme si quiere completarlo también.
+    el mismo nivel de confianza que 33.7. El punto 33.6 (Flatpak) se
+    completó después, en una petición aparte — ver el detalle en el
+    propio sub-punto 33.6 más arriba.
 
     Nota de alcance para 33.7-33.9: en el momento de escribir este
     punto, `README.md` (línea 3) describe el proyecto como "Cliente P2P
