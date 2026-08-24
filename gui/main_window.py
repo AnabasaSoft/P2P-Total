@@ -2,27 +2,32 @@
 panel lateral) y pestañas de Búsqueda / Transferencias / Red."""
 
 import asyncio
+import tempfile
 from pathlib import Path
 
-from PyQt6.QtCore import QEvent
+from PyQt6.QtCore import QEvent, Qt
 from PyQt6.QtGui import QAction, QActionGroup, QIcon
 from PyQt6.QtWidgets import (
     QApplication, QFileDialog, QInputDialog, QLabel, QMainWindow, QMenu, QMessageBox,
-    QSystemTrayIcon, QTabWidget,
+    QProgressDialog, QSystemTrayIcon, QTabWidget,
 )
 
 from backends.dcpp_backend import parse_dchub_link
 from backends.emule_backend import parse_ed2k_link
 from core.backend_base import BackendRegistry
+from core.bandwidth_scheduler import BandwidthScheduler
 from core.config import load_config, save_config
 from core.models import Download, DownloadState, Network, SearchResult
 from core.download_manager import DownloadManager
+from core.http_client import http_download
+from core.remote_control import RemoteControlServer
 from core.saved_search_manager import SavedSearchManager
+from core.self_updater import apply_update_and_relaunch, can_self_update, detect_install_kind, find_update_asset
 from core.update_checker import check_for_update
 from core.watch_folder import WatchFolderManager
 from gui import theme
 from gui.connection_manager import STATUS_CONNECTED, STATUS_CONNECTING, ConnectionManager
-from gui.i18n import LANGUAGES, t
+from gui.i18n import LANGUAGES, t, t_in
 from gui.models_qt import NETWORK_LABEL_KEYS, _format_speed
 from gui.resources import ICON_PATH
 from gui.widgets.about_dialog import AboutDialog
@@ -60,6 +65,12 @@ class MainWindow(QMainWindow):
         self._watch_folder_manager.on_added(self._on_watch_folder_added)
         self._watch_folder_manager.start()
 
+        self._bandwidth_scheduler = BandwidthScheduler(self._connection_manager.apply_global_speed_limits)
+        self._bandwidth_scheduler.start()
+
+        self._remote_control_server = RemoteControlServer(self._download_manager, self._connection_manager)
+        self._remote_control_server.start()
+
         self._download_manager.on_verify_result(self._on_verify_result)
 
         self._search_tab = SearchTab(self._download_manager, self._connection_manager, self._saved_search_manager)
@@ -94,14 +105,54 @@ class MainWindow(QMainWindow):
         self._notified_download_ids: set[int] = set()
         self._download_manager.on_progress(self._on_progress_for_notifications)
 
+        self._connection_manager.autoconnect_configured_networks()
+
         asyncio.ensure_future(self._check_for_update())
 
     async def _check_for_update(self) -> None:
         config = load_config()
-        result = await check_for_update(proxy=config.proxy)
-        if result is not None:
-            new_version, release_url = result
-            UpdateAvailableDialog(new_version, release_url, self).exec()
+        info = await check_for_update(proxy=config.proxy)
+        if info is None:
+            return
+        install_kind = detect_install_kind()
+        asset = find_update_asset(info.assets, install_kind) if can_self_update(install_kind) else None
+        dialog = UpdateAvailableDialog(info.version, info.release_url, asset is not None, self)
+        dialog.exec()
+        if asset is not None and dialog.update_now_clicked():
+            await self._run_self_update(install_kind, asset, config.proxy)
+
+    async def _run_self_update(self, install_kind, asset: dict, proxy) -> None:
+        progress = QProgressDialog(t("update_downloading"), t("update_dialog_cancel"), 0, 100, self)
+        progress.setWindowTitle(t("update_dialog_title"))
+        progress.setWindowModality(Qt.WindowModality.WindowModal)
+        progress.setMinimumDuration(0)
+        progress.setValue(0)
+        progress.show()
+
+        def on_progress(downloaded: int, total: int | None) -> None:
+            if total:
+                progress.setValue(min(100, int(downloaded * 100 / total)))
+            QApplication.processEvents()
+
+        tmp_dir = Path(tempfile.mkdtemp(prefix="p2p-total-update-"))
+        dest_path = tmp_dir / asset["name"]
+        try:
+            await http_download(asset["browser_download_url"], dest_path, proxy=proxy, progress_cb=on_progress)
+        except Exception:
+            progress.close()
+            QMessageBox.warning(self, t("update_dialog_title"), t("update_download_failed"))
+            return
+        progress.close()
+
+        try:
+            apply_update_and_relaunch(install_kind, dest_path)
+        except Exception:
+            QMessageBox.warning(self, t("update_dialog_title"), t("update_apply_failed"))
+            return
+
+        self._quitting = True
+        self.close()
+        QApplication.instance().quit()
 
     # ---- Menú ----
 
@@ -416,6 +467,7 @@ class MainWindow(QMainWindow):
         if dialog.exec():
             theme.apply_theme(QApplication.instance(), dialog.selected_theme())
             self._connection_manager.apply_global_speed_limits()
+            self._remote_control_server.reload()
 
     def _on_theme_selected(self, theme_name: str) -> None:
         config = load_config()
@@ -429,7 +481,11 @@ class MainWindow(QMainWindow):
             return
         config.ui.language = language_code
         save_config(config)
-        QMessageBox.information(self, t("app_title"), t("msg_restart_language"))
+        # El aviso se muestra ya en el idioma recién elegido, no en el
+        # que sigue activo hasta el próximo arranque -- si no, el texto
+        # confirmando el cambio saldría en el idioma que se acaba de
+        # dejar de usar.
+        QMessageBox.information(self, t_in(language_code, "app_title"), t_in(language_code, "msg_restart_language"))
 
     def _on_about(self) -> None:
         AboutDialog(self).exec()
@@ -508,6 +564,8 @@ class MainWindow(QMainWindow):
 
         self._saved_search_manager.stop()
         self._watch_folder_manager.stop()
+        self._bandwidth_scheduler.stop()
+        self._remote_control_server.stop()
         for network in self._connection_manager.connected_networks():
             asyncio.ensure_future(self._connection_manager.disconnect_network(network))
         if self._tray_icon is not None:

@@ -99,7 +99,9 @@ velocidad globales y por descarga.
   descarga se queda sin fuentes.
 - Selección de archivos y descarga secuencial dentro de un torrent
   multi-archivo.
-- Límites de velocidad de subida/bajada, globales y por descarga.
+- Límites de velocidad de subida/bajada, globales y por descarga, con
+  un planificador opcional que aplica unos límites alternativos solo
+  durante una franja horaria del día (p.ej. limitar más de noche).
 - **Pausar y reanudar de verdad**: retoma desde los bytes ya escritos
   en disco, no reinicia desde cero, en las cinco redes.
 - **Las descargas activas sobreviven a cerrar y reabrir la
@@ -158,6 +160,14 @@ velocidad globales y por descarga.
 - Icono en la bandeja del sistema, con menú rápido (conectar/
   desconectar todas las redes, pausar/reanudar todas las descargas) y
   opción de minimizar a bandeja al cerrar o al minimizar.
+- **Control remoto / API web opcional**: gestiona las descargas
+  (listar, pausar, reanudar, cancelar, borrar, buscar y añadir nuevas)
+  desde el navegador de cualquier dispositivo de la red, sin abrir la
+  ventana de escritorio — pensado para usarlo con la aplicación
+  minimizada a la bandeja. Desactivado por defecto y protegido con un
+  token de acceso propio.
+- Conexión automática al arrancar, configurable por red de forma
+  independiente desde su pestaña en Preferencias.
 - Notificaciones nativas del sistema operativo al completar o fallar
   una descarga.
 - Pestaña de estadísticas globales: total subido/bajado, ratio y
@@ -167,6 +177,10 @@ velocidad globales y por descarga.
   para llevar el programa entero en un pendrive.
 - Aviso de nueva versión disponible al arrancar (comprobado contra los
   releases publicados en GitHub), con acceso directo a la descarga.
+- Accesibilidad: nombres accesibles para lectores de pantalla en
+  tablas y campos, menú contextual navegable con Mayús+F10 igual que
+  con el botón derecho del ratón, y atajo Supr para borrar descargas
+  seleccionadas.
 
 ## Instalación
 
@@ -277,6 +291,12 @@ chat, verificación de integridad, proxy, IPv6 donde el protocolo lo
 permite, y todas las funciones de la sección [Funciones](#funciones)
 anteriores.
 
+Sobre **BitTorrent** en particular: negocia cifrado de protocolo
+(MSE/PE, para dificultar el filtrado por parte de ISPs que limitan el
+tráfico BitTorrent en claro) y usa µTP además de TCP para atravesar NAT
+con más facilidad — ambos validados contra un torrent real con más de
+150 peers conectados simultáneamente.
+
 Sobre **Gnutella2** en particular: por precaución deliberada, nunca se
 ha intentado ni se intentará una descarga real de contenido descubierto
 por búsqueda en esa red (ver el detalle del motivo, encontrado durante
@@ -293,7 +313,15 @@ Los seis paquetes se generan y comprueban solos en cada versión — lo
 que todavía no se ha probado es el comportamiento en caliente de la
 app ya instalada en un Windows o macOS real (el proyecto se ha
 desarrollado y validado en Linux; ver el detalle y las salvedades en
-`DEVLOG.md`). El registro técnico completo — arquitectura a fondo,
+`DEVLOG.md`).
+
+Además del aviso de nueva versión, la app ahora se **auto-actualiza de
+verdad** cuando el tipo de instalación lo permite (AppImage, instalador
+de Windows y `.app` de macOS): descarga el paquete nuevo, lo instala y
+se relanza sola, sin que el usuario tenga que ir a la página de
+descargas a mano. En `.deb`/`.rpm`/`.flatpak` (gestionados por el
+sistema) sigue apareciendo el aviso de siempre con el enlace a la
+release. El registro técnico completo — arquitectura a fondo,
 notas de protocolo de cada red, cada bug real encontrado y cómo se
 validó cada función, y el backlog detallado punto por punto — vive en
 [`DEVLOG.md`](DEVLOG.md).

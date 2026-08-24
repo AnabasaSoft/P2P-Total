@@ -8,6 +8,8 @@ panel de redes de la GUI pueda pintar el "piloto" de color
 correspondiente (desconectado / conectando / conectado / error).
 """
 
+import asyncio
+
 from PyQt6.QtCore import QObject, pyqtSignal
 
 from backends.dcpp_backend import DCPPBackend
@@ -16,6 +18,7 @@ from backends.g2_backend import G2Backend
 from backends.soulseek_backend import SoulseekBackend
 from backends.torrent_backend import TorrentBackend
 from core.backend_base import NetworkBackend
+from core.bandwidth_scheduler import effective_limits_kbps
 from core.config import load_config
 from core.download_manager import DownloadManager
 from core.models import Network
@@ -38,6 +41,14 @@ class ConnectionManager(QObject):
         self._download_manager = download_manager
         self._backends: dict[Network, NetworkBackend] = {}
         self._statuses: dict[Network, str] = {n: STATUS_DISCONNECTED for n in Network}
+        # Una única SharedLibrary compartida por las cuatro redes que
+        # sirven ficheros (Soulseek/DC++/G2/eMule), en vez de una por
+        # red: así el escaneo/hasheo de las carpetas compartidas (caro
+        # con muchos GB) solo se paga una vez por sesión -y se beneficia
+        # de la caché de rescan()- en lugar de una vez por cada red al
+        # conectar, y auto-conectar varias redes a la vez no las
+        # multiplica.
+        self._shared_library = SharedLibrary()
 
     def status(self, network: Network) -> str:
         return self._statuses[network]
@@ -54,6 +65,16 @@ class ConnectionManager(QObject):
     def _set_status(self, network: Network, status: str, message: str = "") -> None:
         self._statuses[network] = status
         self.status_changed.emit(network.value, status, message)
+
+    def autoconnect_configured_networks(self) -> None:
+        """Lanza en segundo plano la conexión de cada red marcada en
+        Preferencias con "Conectar automáticamente al arrancar", sin
+        esperar a que termine ninguna (igual que un "Conectar" manual
+        desde el menú Redes o la propia pestaña): se llama una sola vez,
+        al construir la ventana principal."""
+        config = load_config()
+        for network in config.auto_connect_networks():
+            asyncio.ensure_future(self.connect_network(network))
 
     async def connect_network(self, network: Network, hub_override: tuple[str, int] | None = None) -> None:
         if self._statuses[network] in (STATUS_CONNECTING, STATUS_CONNECTED):
@@ -85,10 +106,12 @@ class ConnectionManager(QObject):
     @staticmethod
     def _apply_speed_limits(backend: NetworkBackend, config) -> None:
         apply_global_limits(config)
-        backend.set_global_limits(
-            config.global_download_limit_kbps * 1024,
-            config.global_upload_limit_kbps * 1024,
-        )
+        # BitTorrent no comparte el limitador de core.rate_limiter (usa el
+        # suyo propio de libtorrent), así que necesita los mismos límites
+        # efectivos -planificador por franja horaria incluido- aplicados
+        # aquí de forma explícita.
+        download_kbps, upload_kbps = effective_limits_kbps(config)
+        backend.set_global_limits(download_kbps * 1024, upload_kbps * 1024)
 
     async def disconnect_network(self, network: Network) -> None:
         backend = self._backends.pop(network, None)
@@ -100,8 +123,21 @@ class ConnectionManager(QObject):
         stats_tracker.connection_closed(network)
         self._set_status(network, STATUS_DISCONNECTED)
 
+    def _get_shared_library(self, config) -> SharedLibrary:
+        """Devuelve la SharedLibrary compartida, actualizando sus raíces
+        si han cambiado en Preferencias desde la última vez -evitando
+        llamar a set_roots() cuando no hace falta, porque vacía `_files`
+        al momento y otra red ya conectada que esté sirviendo desde la
+        misma instancia se quedaría sin ficheros hasta el siguiente
+        rescan()."""
+        current_roots = [str(p) for p in self._shared_library.roots]
+        if current_roots != list(config.shared_folders):
+            self._shared_library.set_roots(config.shared_folders)
+        return self._shared_library
+
     async def _build_backend(self, network: Network, hub_override: tuple[str, int] | None = None) -> NetworkBackend:
         config = load_config()
+        shared_library = self._get_shared_library(config)
 
         if network == Network.TORRENT:
             backend = TorrentBackend(proxy=config.proxy)
@@ -116,7 +152,7 @@ class ConnectionManager(QObject):
                 config.soulseek.password,
                 download_dir=config.default_download_dir,
                 listen_port=config.soulseek.listen_port,
-                shared_library=SharedLibrary(config.shared_folders),
+                shared_library=shared_library,
                 proxy=config.proxy,
             )
             await backend.connect()
@@ -136,7 +172,7 @@ class ConnectionManager(QObject):
             backend = DCPPBackend(
                 config.dcpp.nickname,
                 listen_port=config.dcpp.listen_port,
-                shared_library=SharedLibrary(config.shared_folders),
+                shared_library=shared_library,
                 proxy=config.proxy,
             )
             await backend.connect()
@@ -146,7 +182,7 @@ class ConnectionManager(QObject):
         if network == Network.GNUTELLA2:
             backend = G2Backend(
                 listen_port=config.gnutella2.listen_port,
-                shared_library=SharedLibrary(config.shared_folders),
+                shared_library=shared_library,
                 proxy=config.proxy,
             )
             await backend.connect()
@@ -166,7 +202,7 @@ class ConnectionManager(QObject):
                 config.emule.nickname,
                 listen_port=config.emule.listen_port,
                 kad_udp_port=config.emule.kad_udp_port,
-                shared_library=SharedLibrary(config.shared_folders),
+                shared_library=shared_library,
                 proxy=config.proxy,
                 obfuscation=config.emule.obfuscation,
             )

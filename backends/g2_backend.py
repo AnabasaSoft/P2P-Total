@@ -838,8 +838,23 @@ class G2Backend(NetworkBackend):
         # el servidor que sirve nuestra carpeta compartida a otros
         # peers (independiente de a qué hub nos conectemos después).
         if self._shared_library is not None:
-            self._shared_library.rescan()
-            if self._shared_library.enabled:
+            # need_ed2k=False: a diferencia de Soulseek/DC++, G2 sí
+            # necesita el SHA1 de cada fichero para anunciarlo y
+            # responder búsquedas "urn:sha1:" (need_sha1=True, el valor
+            # por defecto), pero no el eD2k -con diferencia el hash más
+            # caro de calcular, ver SharedLibrary.rescan-, que no usa
+            # para nada. En segundo plano sin esperar (ver
+            # SharedLibrary.ensure_scanning), así connect() no se queda
+            # esperando a que termine de hashear toda la biblioteca.
+            self._shared_library.ensure_scanning(need_ed2k=False)
+            # Antes se comprobaba `self._shared_library.enabled` (es
+            # decir, que el escaneo ya hubiera indexado algo) para
+            # decidir si merecía la pena escuchar; ahora el escaneo es
+            # en segundo plano y puede tardar, así que se decide con
+            # `roots` (hay carpetas compartidas configuradas, aunque
+            # todavía no se hayan terminado de indexar) para no dejar de
+            # escuchar peticiones mientras el índice se va rellenando.
+            if self._shared_library.roots:
                 try:
                     self._share_server = await asyncio.start_server(
                         self._handle_incoming_connection, "0.0.0.0", self._listen_port

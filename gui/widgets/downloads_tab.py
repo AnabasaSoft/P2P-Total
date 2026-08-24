@@ -6,15 +6,16 @@ cancelar/iniciar/reiniciar/abrir carpeta), al estilo de la pestaña
 import asyncio
 
 from PyQt6.QtCore import QUrl, Qt
-from PyQt6.QtGui import QDesktopServices
+from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QHeaderView, QInputDialog, QMenu, QMessageBox, QTableView, QVBoxLayout, QWidget,
+    QAbstractItemView, QHeaderView, QInputDialog, QMenu, QMessageBox, QVBoxLayout, QWidget,
 )
 
 from core.download_manager import DownloadManager
 from core.models import Download, DownloadState, Network
 from gui.i18n import t
 from gui.models_qt import DownloadsModel, DownloadsSortProxy
+from gui.widgets.accessible_table import AccessibleTableView
 from gui.widgets.delegates import ProgressBarDelegate
 from gui.widgets.torrent_files_dialog import TorrentFilesDialog
 
@@ -29,7 +30,8 @@ class DownloadsTab(QWidget):
         self._model = DownloadsModel(self)
         self._proxy = DownloadsSortProxy(self)
         self._proxy.setSourceModel(self._model)
-        self._table = QTableView()
+        self._table = AccessibleTableView()
+        self._table.setAccessibleName(t("acc_downloads_table"))
         self._table.setModel(self._proxy)
         self._table.setSortingEnabled(True)
         self._table.setAlternatingRowColors(True)
@@ -48,6 +50,13 @@ class DownloadsTab(QWidget):
         self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self._table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._table)
+
+        # Punto 34.7 del backlog (accesibilidad): atajo de teclado
+        # estándar (Supr) para borrar la selección sin tener que abrir
+        # el menú contextual, igual que en un gestor de archivos.
+        delete_shortcut = QShortcut(QKeySequence.StandardKey.Delete, self._table)
+        delete_shortcut.setContext(Qt.ShortcutContext.WidgetShortcut)
+        delete_shortcut.activated.connect(lambda: self._confirm_and_delete(self._selected_downloads()))
 
         self._model.set_downloads(self._manager.load_history())
         self._manager.on_progress(self._on_progress)

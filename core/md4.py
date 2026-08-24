@@ -53,11 +53,25 @@ class MD4:
             self.update(data)
 
     def update(self, data: bytes) -> None:
+        # OJO rendimiento: si esto se escribiera como
+        # `self._buffer += data` seguido de recortar `self._buffer =
+        # self._buffer[64:]` en cada bloque de 64 bytes dentro del bucle,
+        # cada recorte copiaría el búfer entero restante -> O(n) por
+        # bloque, O(n²) en total para un `data` grande (p.ej. los chunks
+        # de 1 MB que lee SharedLibrary.rescan() al hashear un fichero
+        # compartido: con eso, hashear un solo fichero de varios GB podía
+        # tardar horas). En su lugar, `self._buffer` solo guarda como
+        # mucho 63 bytes de resto entre llamadas, y se avanza con un
+        # índice sobre `data` en vez de ir reasignando el búfer entero.
         self._length += len(data)
-        self._buffer += data
-        while len(self._buffer) >= 64:
-            self._process_block(self._buffer[:64])
-            self._buffer = self._buffer[64:]
+        if self._buffer:
+            data = self._buffer + data
+        n = len(data)
+        offset = 0
+        while offset + 64 <= n:
+            self._process_block(data[offset:offset + 64])
+            offset += 64
+        self._buffer = data[offset:]
 
     def _process_block(self, block: bytes) -> None:
         x = struct.unpack("<16I", block)

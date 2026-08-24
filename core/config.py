@@ -30,6 +30,7 @@ from pathlib import Path
 import keyring
 import keyring.errors
 
+from core.models import Network
 from core.proxy import ProxyConfig
 
 logger = logging.getLogger(__name__)
@@ -152,6 +153,7 @@ class TorrentConfig:
     # resolución DHT siempre devuelve como mucho un resultado.
     max_results: int = 0      # 0 = ilimitado
     search_timeout: float = 15.0
+    auto_connect: bool = False  # conectar esta red sola al arrancar la GUI (ver ConnectionManager.autoconnect_configured_networks)
 
 
 @dataclass
@@ -161,6 +163,7 @@ class SoulseekConfig:
     listen_port: int = 2234
     max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
     search_timeout: float = 20.0
+    auto_connect: bool = False
 
 
 @dataclass
@@ -172,6 +175,7 @@ class DCPPConfig:
     listen_port: int = 41290  # >1024: los puertos reservados (<1024) necesitan root en Linux
     max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
     search_timeout: float = 20.0
+    auto_connect: bool = False
 
     def is_configured(self) -> bool:
         return bool(self.nickname)
@@ -186,6 +190,7 @@ class Gnutella2Config:
     listen_port: int = 6346   # puerto fijo para recibir conexiones /PUSH entrantes (reenviable en el router)
     max_results: int = 0      # 0 = ilimitado (solo lo limita search_timeout)
     search_timeout: float = 20.0
+    auto_connect: bool = False
 
 
 @dataclass
@@ -209,6 +214,7 @@ class EMuleConfig:
     # ofuscada (puede romper la ruta de "callback" para fuentes LowID
     # si el otro lado no tiene ya en caché nuestro userhash).
     obfuscation: str = "enabled"
+    auto_connect: bool = False
 
 
 @dataclass
@@ -241,6 +247,40 @@ class Category:
 
 
 @dataclass
+class ScheduleConfig:
+    """Planificador de ancho de banda por franja horaria (punto 34.5
+    del backlog, ver `core/bandwidth_scheduler.py`): mientras
+    `enabled` está activo y la hora actual cae entre `start` y `end`
+    (formato "HH:MM", `start` > `end` cruza la medianoche), se aplican
+    `download_limit_kbps`/`upload_limit_kbps` en vez de los límites
+    globales normales de `Config`."""
+    enabled: bool = False
+    start: str = "22:00"
+    end: str = "07:00"
+    download_limit_kbps: int = 0  # 0 = ilimitado durante la franja
+    upload_limit_kbps: int = 0    # 0 = ilimitado durante la franja
+
+
+@dataclass
+class RemoteControlConfig:
+    """Control remoto / API web (punto 34.6 del backlog, ver
+    `core/remote_control.py`): permite gestionar las descargas desde un
+    navegador sin abrir la ventana de escritorio. Desactivado por
+    defecto; hace falta fijar un `token` propio (Preferencias ofrece un
+    botón para generar uno aleatorio) antes de poder activarlo, porque
+    de lo contrario cualquiera con acceso al puerto podría gestionar
+    las descargas -- hay que mandarlo en cada petición a la API
+    (cabecera "Authorization: Bearer <token>" o "?token="). `host` por
+    defecto es solo localhost ("127.0.0.1"); ponerlo a "0.0.0.0" expone
+    la API/página a toda la red local, una decisión explícita del
+    usuario."""
+    enabled: bool = False
+    host: str = "127.0.0.1"
+    port: int = 8765
+    token: str = ""
+
+
+@dataclass
 class Config:
     torrent: TorrentConfig = field(default_factory=TorrentConfig)
     soulseek: SoulseekConfig = field(default_factory=SoulseekConfig)
@@ -249,6 +289,8 @@ class Config:
     emule: EMuleConfig = field(default_factory=EMuleConfig)
     ui: UIConfig = field(default_factory=UIConfig)
     proxy: ProxyConfig = field(default_factory=ProxyConfig)
+    schedule: ScheduleConfig = field(default_factory=ScheduleConfig)
+    remote_control: RemoteControlConfig = field(default_factory=RemoteControlConfig)
     default_download_dir: str = str(Path.home() / "Descargas" / "P2P-Total")
     shared_folders: list[str] = field(default_factory=list)   # vacía = no se comparte nada (ver core/sharing.py)
     global_download_limit_kbps: int = 0   # 0 = ilimitado; aplica a la suma de todas las redes/descargas
@@ -261,6 +303,19 @@ class Config:
 
     def is_soulseek_configured(self) -> bool:
         return bool(self.soulseek.username and self.soulseek.password)
+
+    def auto_connect_networks(self) -> list[Network]:
+        """Redes marcadas en Preferencias para conectar solas al arrancar
+        la GUI (una por red, ver `auto_connect` en cada *Config), en el
+        mismo orden que recorre `core.models.Network`."""
+        per_network = {
+            Network.TORRENT: self.torrent,
+            Network.SOULSEEK: self.soulseek,
+            Network.DCPP: self.dcpp,
+            Network.GNUTELLA2: self.gnutella2,
+            Network.EMULE: self.emule,
+        }
+        return [network for network, cfg in per_network.items() if cfg.auto_connect]
 
 
 def load_config(path: Path | None = None) -> Config:
@@ -285,10 +340,13 @@ def load_config(path: Path | None = None) -> Config:
     emule_data = data.get("emule", {})         # {} si es de antes de añadir eMule
     ui_data = data.get("ui", {})                 # {} si es de antes de añadir la GUI
     proxy_data = data.get("proxy", {})           # {} si es de antes de añadir el soporte de proxy
+    schedule_data = data.get("schedule", {})     # {} si es de antes de añadir el planificador (punto 34.5)
+    remote_control_data = data.get("remote_control", {})  # {} si es de antes de añadir el control remoto (punto 34.6)
     return Config(
         torrent=TorrentConfig(
             max_results=torrent_data.get("max_results", 0),
             search_timeout=torrent_data.get("search_timeout", 15.0),
+            auto_connect=torrent_data.get("auto_connect", False),
         ),
         soulseek=SoulseekConfig(
             username=soulseek_data.get("username", ""),
@@ -296,6 +354,7 @@ def load_config(path: Path | None = None) -> Config:
             listen_port=soulseek_data.get("listen_port", 2234),
             max_results=soulseek_data.get("max_results", 0),
             search_timeout=soulseek_data.get("search_timeout", 20.0),
+            auto_connect=soulseek_data.get("auto_connect", False),
         ),
         dcpp=DCPPConfig(
             nickname=dcpp_data.get("nickname", ""),
@@ -305,6 +364,7 @@ def load_config(path: Path | None = None) -> Config:
             listen_port=dcpp_data.get("listen_port", 41290),
             max_results=dcpp_data.get("max_results", 0),
             search_timeout=dcpp_data.get("search_timeout", 20.0),
+            auto_connect=dcpp_data.get("auto_connect", False),
         ),
         gnutella2=Gnutella2Config(
             default_hub_host=gnutella2_data.get("default_hub_host", ""),
@@ -312,6 +372,7 @@ def load_config(path: Path | None = None) -> Config:
             listen_port=gnutella2_data.get("listen_port", 6346),
             max_results=gnutella2_data.get("max_results", 0),
             search_timeout=gnutella2_data.get("search_timeout", 20.0),
+            auto_connect=gnutella2_data.get("auto_connect", False),
         ),
         emule=EMuleConfig(
             nickname=emule_data.get("nickname", "P2PTotalUser"),
@@ -322,6 +383,7 @@ def load_config(path: Path | None = None) -> Config:
             max_results=emule_data.get("max_results", 0),
             search_timeout=emule_data.get("search_timeout", 20.0),
             obfuscation=emule_data.get("obfuscation", "enabled"),
+            auto_connect=emule_data.get("auto_connect", False),
         ),
         ui=UIConfig(
             theme=ui_data.get("theme", "dark"),
@@ -341,6 +403,21 @@ def load_config(path: Path | None = None) -> Config:
             port=proxy_data.get("port", 1080),
             username=proxy_data.get("username", ""),
             password=_keyring_password_or(_keyring_get("proxy") if use_keyring else None, proxy_data.get("password", "")),
+        ),
+        schedule=ScheduleConfig(
+            enabled=schedule_data.get("enabled", False),
+            start=schedule_data.get("start", "22:00"),
+            end=schedule_data.get("end", "07:00"),
+            download_limit_kbps=schedule_data.get("download_limit_kbps", 0),
+            upload_limit_kbps=schedule_data.get("upload_limit_kbps", 0),
+        ),
+        remote_control=RemoteControlConfig(
+            enabled=remote_control_data.get("enabled", False),
+            host=remote_control_data.get("host", "127.0.0.1"),
+            port=remote_control_data.get("port", 8765),
+            token=_keyring_password_or(
+                _keyring_get("remote_control_token") if use_keyring else None, remote_control_data.get("token", "")
+            ),
         ),
         default_download_dir=data.get("default_download_dir", Config().default_download_dir),
         # "shared_folder" (str) es el nombre del campo antes de admitir
@@ -371,6 +448,7 @@ def save_config(config: Config, path: Path | None = None) -> None:
     soulseek_dict = asdict(config.soulseek)
     dcpp_dict = asdict(config.dcpp)
     proxy_dict = asdict(config.proxy)
+    remote_control_dict = asdict(config.remote_control)
     # Si se consigue guardar cada contraseña en el almacén de credenciales
     # del sistema, no se duplica en texto plano en config.json (en modo
     # portable, o si el almacén no está disponible, se queda en el json
@@ -381,6 +459,8 @@ def save_config(config: Config, path: Path | None = None) -> None:
         dcpp_dict["default_hub_password"] = ""
     if use_keyring and _keyring_set("proxy", config.proxy.password):
         proxy_dict["password"] = ""
+    if use_keyring and _keyring_set("remote_control_token", config.remote_control.token):
+        remote_control_dict["token"] = ""
 
     data = {
         "torrent": asdict(config.torrent),
@@ -390,6 +470,8 @@ def save_config(config: Config, path: Path | None = None) -> None:
         "emule": asdict(config.emule),
         "ui": asdict(config.ui),
         "proxy": proxy_dict,
+        "schedule": asdict(config.schedule),
+        "remote_control": remote_control_dict,
         "default_download_dir": config.default_download_dir,
         "shared_folders": config.shared_folders,
         "global_download_limit_kbps": config.global_download_limit_kbps,

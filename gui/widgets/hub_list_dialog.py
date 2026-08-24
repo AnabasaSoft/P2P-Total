@@ -74,6 +74,7 @@ class HubListDialog(QDialog):
 
         self._filter_edit = QLineEdit()
         self._filter_edit.setPlaceholderText(t("placeholder_filter_hubs"))
+        self._filter_edit.setAccessibleName(t("acc_hub_filter"))
         self._filter_edit.textChanged.connect(self._on_filter_changed)
         layout.addWidget(self._filter_edit)
 

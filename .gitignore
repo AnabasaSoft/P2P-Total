@@ -14,6 +14,7 @@ __pycache__/
 .eggs/
 build/
 dist/
+.pytest_cache/
 
 # Artefactos de empaquetado (packaging/), generados por
 # .github/workflows/build-packages.yml, no se versionan
@@ -31,6 +32,7 @@ appimagetool
 .claude/
 .vscode/
 .idea/
+actualiza.sh
 
 # Descargas y datos locales generados en tiempo de ejecución
 *.log

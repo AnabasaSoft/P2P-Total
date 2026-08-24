@@ -81,6 +81,16 @@ CREATE TABLE IF NOT EXISTS network_stats_daily (
     connected_seconds INTEGER NOT NULL DEFAULT 0,
     PRIMARY KEY (date, network)
 );
+CREATE TABLE IF NOT EXISTS shared_hash_cache (
+    path TEXT PRIMARY KEY,
+    size INTEGER NOT NULL,
+    mtime_ns INTEGER NOT NULL,
+    sha1 BLOB NOT NULL,
+    ed2k BLOB NOT NULL,
+    ed2k_parts TEXT NOT NULL DEFAULT '',
+    has_sha1 INTEGER NOT NULL DEFAULT 0,
+    has_ed2k INTEGER NOT NULL DEFAULT 0
+);
 """
 
 
@@ -367,6 +377,68 @@ def get_all_network_stats() -> dict[str, dict]:
         }
         for row in rows
     }
+
+
+# ---- Caché persistente de hashes de la carpeta compartida ----
+#
+# SharedLibrary (core/sharing.py) recalculaba el eD2k de cada fichero
+# compartido cada vez que arrancaba la app -para una biblioteca grande
+# (varias decenas de GB) eso podía tardar horas incluso ya escaneando
+# en segundo plano, porque volvía a empezar de cero en cada reinicio.
+# Guardando el resultado aquí, solo hace falta rehashear los ficheros
+# nuevos o modificados desde la última vez que se guardó su entrada.
+
+def load_shared_hash_cache() -> dict[str, tuple[int, int, bytes, bytes, list[bytes], bool, bool]]:
+    """Clave = ruta absoluta en disco. Valor = (size, mtime_ns, sha1,
+    ed2k, ed2k_parts, has_sha1, has_ed2k), el mismo formato que usa
+    `SharedLibrary._hash_cache` en memoria."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT * FROM shared_hash_cache").fetchall()
+    result = {}
+    for row in rows:
+        ed2k_parts = [bytes.fromhex(p) for p in row["ed2k_parts"].split(",") if p]
+        result[row["path"]] = (
+            row["size"], row["mtime_ns"], row["sha1"], row["ed2k"], ed2k_parts,
+            bool(row["has_sha1"]), bool(row["has_ed2k"]),
+        )
+    return result
+
+
+def save_shared_hash_cache_entries(
+    entries: list[tuple[str, int, int, bytes, bytes, list[bytes], bool, bool]],
+) -> None:
+    """`entries` en el mismo formato que devuelve `load_shared_hash_cache`
+    (con la ruta como primer elemento de la tupla en vez de como clave).
+    Se llama en lotes desde `SharedLibrary.rescan()` según va hasheando,
+    no solo al terminar, para no perder el progreso si la app se cierra
+    a mitad de un escaneo largo."""
+    if not entries:
+        return
+    with get_connection() as conn:
+        conn.executemany(
+            """INSERT INTO shared_hash_cache (path, size, mtime_ns, sha1, ed2k, ed2k_parts, has_sha1, has_ed2k)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+               ON CONFLICT(path) DO UPDATE SET
+                   size=excluded.size, mtime_ns=excluded.mtime_ns, sha1=excluded.sha1,
+                   ed2k=excluded.ed2k, ed2k_parts=excluded.ed2k_parts,
+                   has_sha1=excluded.has_sha1, has_ed2k=excluded.has_ed2k""",
+            [
+                (path, size, mtime_ns, sha1, ed2k, ",".join(p.hex() for p in ed2k_parts),
+                 int(has_sha1), int(has_ed2k))
+                for path, size, mtime_ns, sha1, ed2k, ed2k_parts, has_sha1, has_ed2k in entries
+            ],
+        )
+
+
+def prune_shared_hash_cache(valid_paths: set[str]) -> None:
+    """Borra de la caché persistente las entradas cuyo fichero ya no está
+    en `valid_paths` (se borró o se movió fuera de las carpetas
+    compartidas). Se llama al terminar un `rescan()` completo."""
+    with get_connection() as conn:
+        rows = conn.execute("SELECT path FROM shared_hash_cache").fetchall()
+        stale = [row["path"] for row in rows if row["path"] not in valid_paths]
+        if stale:
+            conn.executemany("DELETE FROM shared_hash_cache WHERE path = ?", [(p,) for p in stale])
 
 
 def get_network_stats_daily(days: int = 30) -> list[dict]:

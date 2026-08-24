@@ -15,6 +15,7 @@ from gui.connection_manager import (
 from gui.i18n import t
 from gui.models_qt import NETWORK_LABEL_KEYS
 from gui.theme import NETWORK_COLORS, STATUS_DOT_COLORS
+from gui.widgets.accessible_table import AccessibleTableWidget
 from gui.widgets.browse_host_dialog import BrowseHostDialog
 from core.models import Network
 
@@ -33,6 +34,9 @@ _STAT_LABEL_KEYS = {
     "dht_nodes": "stat_dht_nodes",
     "known_peers": "stat_known_peers",
     "active_transfers": "stat_active_transfers",
+    "connected_peers": "stat_connected_peers",
+    "encrypted_peers": "stat_encrypted_peers",
+    "utp_connections": "stat_utp_connections",
     "shared_files": "stat_shared_files",
     "active_uploads": "stat_active_uploads",
     "id_status": "stat_id_status",
@@ -73,7 +77,8 @@ class NetworkTab(QWidget):
 
         layout = QVBoxLayout(self)
 
-        self._table = QTableWidget(len(Network), 3)
+        self._table = AccessibleTableWidget(len(Network), 3)
+        self._table.setAccessibleName(t("acc_network_table"))
         self._table.setHorizontalHeaderLabels(
             [t("col_network"), t("col_network_status"), t("col_network_details")]
         )

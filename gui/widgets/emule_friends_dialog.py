@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from backends.emule_backend import EMuleBackend
 from gui.i18n import t
+from gui.widgets.accessible_table import AccessibleTableWidget
 
 _POLL_INTERVAL_MS = 3000
 
@@ -42,7 +43,8 @@ class EMuleFriendsDialog(QDialog):
         self._status_label.setVisible(False)
         layout.addWidget(self._status_label)
 
-        self._table = QTableWidget(0, 6)
+        self._table = AccessibleTableWidget(0, 6)
+        self._table.setAccessibleName(self.windowTitle())
         self._table.setHorizontalHeaderLabels([
             t("col_credits_nick"), t("col_credits_user_hash"), t("col_credits_downloaded"),
             t("col_credits_uploaded"), t("col_credits_modifier"), t("col_credits_friend"),

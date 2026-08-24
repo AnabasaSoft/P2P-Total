@@ -12,6 +12,8 @@ y `set_download_limit`).
 import asyncio
 import time
 
+from core.bandwidth_scheduler import effective_limits_kbps
+
 
 class RateLimiter:
     """`rate_bps <= 0` significa "sin límite": `consume()` no espera
@@ -61,9 +63,13 @@ global_upload_limiter = RateLimiter()
 
 
 def apply_global_limits(config) -> None:
-    """Aplica a los limitadores globales compartidos los límites de
-    `Config` (kB/s, 0 = ilimitado). Se llama al conectar cualquier red y
-    cada vez que se guardan Preferencias, para que el cambio surta
-    efecto en caliente en las descargas/subidas ya en marcha."""
-    global_download_limiter.set_rate(config.global_download_limit_kbps * 1024)
-    global_upload_limiter.set_rate(config.global_upload_limit_kbps * 1024)
+    """Aplica a los limitadores globales compartidos los límites
+    efectivos ahora mismo (kB/s, 0 = ilimitado): los del planificador
+    por franja horaria (punto 34.5, ver `core.bandwidth_scheduler`) si
+    está activado y toca, o si no los límites globales normales de
+    `Config`. Se llama al conectar cualquier red y cada vez que se
+    guardan Preferencias, para que el cambio surta efecto en caliente
+    en las descargas/subidas ya en marcha."""
+    download_kbps, upload_kbps = effective_limits_kbps(config)
+    global_download_limiter.set_rate(download_kbps * 1024)
+    global_upload_limiter.set_rate(upload_kbps * 1024)

@@ -190,6 +190,23 @@ class TorrentBackend(NetworkBackend):
             "enable_lsd": True,
             "enable_upnp": True,
             "enable_natpmp": True,
+            # Punto 34.3 del backlog: cifrado de protocolo (MSE/PE) y µTP.
+            # libtorrent ya los trae encendidos por defecto aunque no se
+            # toque `settings`, pero se dejan explícitos aquí a propósito
+            # -para que sea una decisión visible y documentada, no un
+            # efecto colateral de no tocar nada- y con la política
+            # concreta que interesa: "enabled" (no "forced") negocia
+            # cifrado con los peers que lo soportan pero sigue aceptando
+            # conexión en claro con los que no, que son todavía muchos en
+            # redes públicas reales; forzarlo tiraría peers válidos por la
+            # borda sin necesidad. `pe_both` acepta tanto RC4 como el modo
+            # "solo handshake ofuscado, payload en claro" que negocian
+            # algunos clientes.
+            "out_enc_policy": lt.enc_policy.pe_enabled,
+            "in_enc_policy": lt.enc_policy.pe_enabled,
+            "allowed_enc_level": lt.enc_level.pe_both,
+            "enable_outgoing_utp": True,
+            "enable_incoming_utp": True,
             "alert_mask": lt.alert.category_t.status_notification
             | lt.alert.category_t.error_notification
             | lt.alert.category_t.storage_notification,
@@ -547,10 +564,24 @@ class TorrentBackend(NetworkBackend):
         if self._session is None:
             return {}
         s = self._session.status()
+        # Prueba en vivo de que el cifrado MSE/PE del punto 34.3 está
+        # negociándose de verdad (no solo activado en la sesión): cuenta,
+        # de los peers conectados ahora mismo en las descargas activas,
+        # cuántos llevan el flag de cifrado puesto tras el handshake.
+        connected_peers = 0
+        encrypted_peers = 0
+        for entry in self._active.values():
+            for peer in entry["handle"].get_peer_info():
+                connected_peers += 1
+                if peer.flags & (lt.peer_info.rc4_encrypted | lt.peer_info.plaintext_encrypted):
+                    encrypted_peers += 1
         return {
             "listen_port": self._session.listen_port(),
             "dht_nodes": s.dht_nodes,
             "active_transfers": len(self._active),
+            "connected_peers": connected_peers,
+            "encrypted_peers": encrypted_peers,
+            "utp_connections": s.utp_stats["num_connected"],
         }
 
     # ---- internos ----

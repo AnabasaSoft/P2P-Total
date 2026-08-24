@@ -30,6 +30,14 @@ SolidCompression=yes
 WizardStyle=modern
 SetupIconFile=p2p-total.ico
 ArchitecturesInstallIn64BitMode=x64compatible
+; Necesario para la auto-actualización (core/self_updater.py, punto 34.1
+; del backlog): al lanzarse en modo silencioso con /CLOSEAPPLICATIONS
+; /RESTARTAPPLICATIONS desde la propia app en marcha, cierra P2P Total
+; automáticamente (detecta el proceso que tiene abiertos los ficheros a
+; sustituir, vía Windows Restart Manager) y lo vuelve a abrir solo al
+; terminar, sin que el usuario tenga que hacer nada.
+CloseApplications=yes
+RestartApplications=yes
 
 [Languages]
 Name: "spanish"; MessagesFile: "compiler:Languages\Spanish.isl"

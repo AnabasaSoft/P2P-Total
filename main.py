@@ -37,6 +37,13 @@ nodes.dat, también automático.
 
 Flags opcionales: --timeout <segundos> (por defecto 15), --debug (traza
 en vivo del protocolo — aplica a torrent, dcpp, gnutella2 y emule).
+
+Suite de tests automatizados (punto 34.2 del backlog, ver DEVLOG.md):
+    pip install -r requirements-dev.txt                        (solo la primera vez)
+    python -m pytest                                            (toda la suite)
+    python -m pytest tests/test_dcpp_backend.py                (un solo fichero)
+    python -m pytest -k nombre_del_test                        (un test suelto, por nombre)
+    python -m pytest -v                                         (con el nombre de cada test)
 """
 
 import asyncio
@@ -49,6 +56,7 @@ from backends.g2_backend import G2Backend
 from backends.soulseek_backend import SoulseekBackend
 from backends.torrent_backend import TorrentBackend
 from core.backend_base import BackendRegistry
+from core.bandwidth_scheduler import effective_limits_kbps
 from core.config import CONFIG_PATH, load_config, save_config
 from core.download_manager import DownloadManager
 from core.models import Network, SearchResult
@@ -187,14 +195,13 @@ async def cmd_search(query: str, timeout: float, debug: bool, network: Network,
 async def cmd_download(query: str, dest: str, timeout: float, network: Network,
                         hub_override: str | None = None) -> None:
     config = load_config()
-    apply_global_limits(config)  # límites globales (punto 2 del backlog); las cuatro redes "manuales" comparten el limitador de core.rate_limiter
+    apply_global_limits(config)  # límites globales (punto 2 del backlog, con planificador por franja horaria del 34.5); las cuatro redes "manuales" comparten el limitador de core.rate_limiter
+    download_kbps, upload_kbps = effective_limits_kbps(config)
 
     if network == Network.TORRENT:
         torrent_backend = TorrentBackend(proxy=config.proxy)
         await torrent_backend.connect()
-        torrent_backend.set_global_limits(
-            config.global_download_limit_kbps * 1024, config.global_upload_limit_kbps * 1024
-        )
+        torrent_backend.set_global_limits(download_kbps * 1024, upload_kbps * 1024)
         BackendRegistry.register(torrent_backend)
 
         manager = DownloadManager()

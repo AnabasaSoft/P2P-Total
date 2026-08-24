@@ -1,0 +1,4 @@
+# Dependencias solo necesarias para desarrollo (suite de tests, punto
+# 34.2 del backlog). No hace falta instalarlas para ejecutar la app.
+pytest>=9.1
+pytest-asyncio>=1.4

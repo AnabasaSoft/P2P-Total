@@ -8,12 +8,13 @@ import asyncio
 
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QHeaderView, QMenu, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QAbstractItemView, QHeaderView, QMenu, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from core.models import SavedSearch
 from gui.i18n import t
 from gui.models_qt import NETWORK_LABEL_KEYS
+from gui.widgets.accessible_table import AccessibleTableWidget
 from gui.widgets.alert_results_dialog import AlertResultsDialog
 
 _COL_QUERY, _COL_NETWORKS, _COL_INTERVAL, _COL_ENABLED, _COL_LAST_CHECKED, _COL_NEW = range(6)
@@ -29,7 +30,8 @@ class AlertsTab(QWidget):
         self._manager.on_alert(self._on_alert)
 
         layout = QVBoxLayout(self)
-        self._table = QTableWidget(0, 6, self)
+        self._table = AccessibleTableWidget(0, 6, self)
+        self._table.setAccessibleName(t("tab_alerts"))
         self._table.setHorizontalHeaderLabels([
             t("col_query"), t("col_networks"), t("col_interval"),
             t("col_enabled"), t("col_last_checked"), t("col_new_alerts"),

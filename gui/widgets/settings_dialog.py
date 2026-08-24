@@ -2,19 +2,20 @@
 configuración específica de cada red (equivalente en GUI a
 `python main.py config`)."""
 
+import secrets
 from pathlib import Path
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QTime
 from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QDialog, QDialogButtonBox, QDoubleSpinBox, QFileDialog, QFormLayout,
     QHBoxLayout, QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
-    QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget,
+    QPushButton, QSpinBox, QTabWidget, QTimeEdit, QVBoxLayout, QWidget,
 )
 
 from core.config import (
     Category, Config, disable_portable_mode, enable_portable_mode, is_portable_mode, load_config, save_config,
 )
-from gui.i18n import LANGUAGES, t
+from gui.i18n import LANGUAGES, t, t_in
 from gui.widgets.hub_list_dialog import HubListDialog
 
 
@@ -48,6 +49,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_gnutella2_tab(), t("settings_tab_gnutella2"))
         tabs.addTab(self._build_emule_tab(), t("settings_tab_emule"))
         tabs.addTab(self._build_proxy_tab(), t("settings_tab_proxy"))
+        tabs.addTab(self._build_remote_control_tab(), t("settings_tab_remote"))
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -144,6 +146,39 @@ class SettingsDialog(QDialog):
         self._upload_limit_spin.setValue(self._config.global_upload_limit_kbps)
         form.addRow(t("lbl_global_upload_limit"), self._upload_limit_spin)
 
+        self._schedule_enabled_check = QCheckBox()
+        self._schedule_enabled_check.setChecked(self._config.schedule.enabled)
+        self._schedule_enabled_check.setToolTip(t("schedule_tooltip"))
+        form.addRow(t("chk_schedule_enabled"), self._schedule_enabled_check)
+
+        schedule_time_row = QHBoxLayout()
+        self._schedule_start_edit = QTimeEdit()
+        self._schedule_start_edit.setDisplayFormat("HH:mm")
+        self._schedule_start_edit.setTime(QTime.fromString(self._config.schedule.start, "HH:mm"))
+        self._schedule_end_edit = QTimeEdit()
+        self._schedule_end_edit.setDisplayFormat("HH:mm")
+        self._schedule_end_edit.setTime(QTime.fromString(self._config.schedule.end, "HH:mm"))
+        schedule_time_row.addWidget(self._schedule_start_edit)
+        schedule_time_row.addWidget(QLabel("–"))
+        schedule_time_row.addWidget(self._schedule_end_edit)
+        schedule_time_label = QLabel(t("lbl_schedule_time_range"))
+        schedule_time_label.setToolTip(t("schedule_tooltip"))
+        form.addRow(schedule_time_label, schedule_time_row)
+
+        self._schedule_download_limit_spin = QSpinBox()
+        self._schedule_download_limit_spin.setRange(0, 1_000_000)
+        self._schedule_download_limit_spin.setSuffix(" kB/s")
+        self._schedule_download_limit_spin.setSpecialValueText(t("spin_unlimited_speed"))
+        self._schedule_download_limit_spin.setValue(self._config.schedule.download_limit_kbps)
+        form.addRow(t("lbl_schedule_download_limit"), self._schedule_download_limit_spin)
+
+        self._schedule_upload_limit_spin = QSpinBox()
+        self._schedule_upload_limit_spin.setRange(0, 1_000_000)
+        self._schedule_upload_limit_spin.setSuffix(" kB/s")
+        self._schedule_upload_limit_spin.setSpecialValueText(t("spin_unlimited_speed"))
+        self._schedule_upload_limit_spin.setValue(self._config.schedule.upload_limit_kbps)
+        form.addRow(t("lbl_schedule_upload_limit"), self._schedule_upload_limit_spin)
+
         self._auto_retry_attempts_spin = QSpinBox()
         self._auto_retry_attempts_spin.setRange(0, 100)
         self._auto_retry_attempts_spin.setSpecialValueText(t("spin_no_retry"))
@@ -193,6 +228,10 @@ class SettingsDialog(QDialog):
         widget = QWidget()
         form = QFormLayout(widget)
 
+        self._torrent_auto_connect_check = QCheckBox()
+        self._torrent_auto_connect_check.setChecked(self._config.torrent.auto_connect)
+        form.addRow(t("chk_auto_connect"), self._torrent_auto_connect_check)
+
         self._torrent_max_results_spin = QSpinBox()
         self._torrent_max_results_spin.setRange(0, 100000)
         self._torrent_max_results_spin.setSpecialValueText(t("spin_unlimited"))
@@ -210,6 +249,11 @@ class SettingsDialog(QDialog):
     def _build_soulseek_tab(self) -> QWidget:
         widget = QWidget()
         form = QFormLayout(widget)
+
+        self._slsk_auto_connect_check = QCheckBox()
+        self._slsk_auto_connect_check.setChecked(self._config.soulseek.auto_connect)
+        form.addRow(t("chk_auto_connect"), self._slsk_auto_connect_check)
+
         self._slsk_user_edit = QLineEdit(self._config.soulseek.username)
         self._slsk_pass_edit = QLineEdit(self._config.soulseek.password)
         self._slsk_pass_edit.setEchoMode(QLineEdit.EchoMode.Password)
@@ -238,6 +282,11 @@ class SettingsDialog(QDialog):
     def _build_dcpp_tab(self) -> QWidget:
         widget = QWidget()
         form = QFormLayout(widget)
+
+        self._dcpp_auto_connect_check = QCheckBox()
+        self._dcpp_auto_connect_check.setChecked(self._config.dcpp.auto_connect)
+        form.addRow(t("chk_auto_connect"), self._dcpp_auto_connect_check)
+
         self._dcpp_nick_edit = QLineEdit(self._config.dcpp.nickname)
         self._dcpp_hub_edit = QLineEdit(
             _hostport_text(self._config.dcpp.default_hub_host, self._config.dcpp.default_hub_port)
@@ -274,6 +323,11 @@ class SettingsDialog(QDialog):
     def _build_gnutella2_tab(self) -> QWidget:
         widget = QWidget()
         form = QFormLayout(widget)
+
+        self._g2_auto_connect_check = QCheckBox()
+        self._g2_auto_connect_check.setChecked(self._config.gnutella2.auto_connect)
+        form.addRow(t("chk_auto_connect"), self._g2_auto_connect_check)
+
         self._g2_hub_edit = QLineEdit(
             _hostport_text(self._config.gnutella2.default_hub_host, self._config.gnutella2.default_hub_port)
         )
@@ -301,6 +355,11 @@ class SettingsDialog(QDialog):
     def _build_emule_tab(self) -> QWidget:
         widget = QWidget()
         form = QFormLayout(widget)
+
+        self._emule_auto_connect_check = QCheckBox()
+        self._emule_auto_connect_check.setChecked(self._config.emule.auto_connect)
+        form.addRow(t("chk_auto_connect"), self._emule_auto_connect_check)
+
         self._emule_nick_edit = QLineEdit(self._config.emule.nickname)
         self._emule_server_edit = QLineEdit(
             _hostport_text(self._config.emule.default_server_host, self._config.emule.default_server_port)
@@ -375,7 +434,40 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _build_remote_control_tab(self) -> QWidget:
+        widget = QWidget()
+        form = QFormLayout(widget)
+
+        self._remote_enabled_check = QCheckBox()
+        self._remote_enabled_check.setChecked(self._config.remote_control.enabled)
+        form.addRow(t("lbl_remote_enabled"), self._remote_enabled_check)
+
+        self._remote_host_edit = QLineEdit(self._config.remote_control.host)
+        form.addRow(t("lbl_remote_host"), self._remote_host_edit)
+
+        self._remote_port_spin = QSpinBox()
+        self._remote_port_spin.setRange(1, 65535)
+        self._remote_port_spin.setValue(self._config.remote_control.port)
+        form.addRow(t("lbl_remote_port"), self._remote_port_spin)
+
+        token_row = QHBoxLayout()
+        self._remote_token_edit = QLineEdit(self._config.remote_control.token)
+        token_row.addWidget(self._remote_token_edit)
+        generate_button = QPushButton(t("btn_remote_generate_token"))
+        generate_button.clicked.connect(self._on_generate_remote_token)
+        token_row.addWidget(generate_button)
+        form.addRow(t("lbl_remote_token"), token_row)
+
+        note = QLabel(t("lbl_remote_note"))
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        return widget
+
     # ---- Acciones ----
+
+    def _on_generate_remote_token(self) -> None:
+        self._remote_token_edit.setText(secrets.token_urlsafe(24))
 
     def _on_browse_download_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, t("btn_browse"), self._download_dir_edit.text())
@@ -450,6 +542,11 @@ class SettingsDialog(QDialog):
         config.ui.theme = self._theme_combo.currentData()
         config.global_download_limit_kbps = self._download_limit_spin.value()
         config.global_upload_limit_kbps = self._upload_limit_spin.value()
+        config.schedule.enabled = self._schedule_enabled_check.isChecked()
+        config.schedule.start = self._schedule_start_edit.time().toString("HH:mm")
+        config.schedule.end = self._schedule_end_edit.time().toString("HH:mm")
+        config.schedule.download_limit_kbps = self._schedule_download_limit_spin.value()
+        config.schedule.upload_limit_kbps = self._schedule_upload_limit_spin.value()
         config.auto_retry_max_attempts = self._auto_retry_attempts_spin.value()
         config.auto_retry_delay_seconds = self._auto_retry_delay_spin.value()
         config.ui.minimize_to_tray = self._minimize_to_tray_check.isChecked()
@@ -459,12 +556,14 @@ class SettingsDialog(QDialog):
 
         config.torrent.max_results = self._torrent_max_results_spin.value()
         config.torrent.search_timeout = self._torrent_timeout_spin.value()
+        config.torrent.auto_connect = self._torrent_auto_connect_check.isChecked()
 
         config.soulseek.username = self._slsk_user_edit.text().strip()
         config.soulseek.password = self._slsk_pass_edit.text()
         config.soulseek.listen_port = self._slsk_port_spin.value()
         config.soulseek.max_results = self._slsk_max_results_spin.value()
         config.soulseek.search_timeout = self._slsk_timeout_spin.value()
+        config.soulseek.auto_connect = self._slsk_auto_connect_check.isChecked()
 
         config.dcpp.nickname = self._dcpp_nick_edit.text().strip()
         host, port = _parse_hostport(self._dcpp_hub_edit.text(), 411)
@@ -473,12 +572,14 @@ class SettingsDialog(QDialog):
         config.dcpp.listen_port = self._dcpp_port_spin.value()
         config.dcpp.max_results = self._dcpp_max_results_spin.value()
         config.dcpp.search_timeout = self._dcpp_timeout_spin.value()
+        config.dcpp.auto_connect = self._dcpp_auto_connect_check.isChecked()
 
         host, port = _parse_hostport(self._g2_hub_edit.text(), 6346)
         config.gnutella2.default_hub_host, config.gnutella2.default_hub_port = host, port
         config.gnutella2.listen_port = self._g2_port_spin.value()
         config.gnutella2.max_results = self._g2_max_results_spin.value()
         config.gnutella2.search_timeout = self._g2_timeout_spin.value()
+        config.gnutella2.auto_connect = self._g2_auto_connect_check.isChecked()
 
         config.emule.nickname = self._emule_nick_edit.text().strip() or config.emule.nickname
         host, port = _parse_hostport(self._emule_server_edit.text(), 4661)
@@ -488,6 +589,7 @@ class SettingsDialog(QDialog):
         config.emule.max_results = self._emule_max_results_spin.value()
         config.emule.search_timeout = self._emule_timeout_spin.value()
         config.emule.obfuscation = self._emule_obfuscation_combo.currentData()
+        config.emule.auto_connect = self._emule_auto_connect_check.isChecked()
 
         config.proxy.enabled = self._proxy_enabled_check.isChecked()
         config.proxy.kind = self._proxy_kind_combo.currentData()
@@ -495,6 +597,11 @@ class SettingsDialog(QDialog):
         config.proxy.port = self._proxy_port_spin.value()
         config.proxy.username = self._proxy_user_edit.text().strip()
         config.proxy.password = self._proxy_pass_edit.text()
+
+        config.remote_control.enabled = self._remote_enabled_check.isChecked()
+        config.remote_control.host = self._remote_host_edit.text().strip() or config.remote_control.host
+        config.remote_control.port = self._remote_port_spin.value()
+        config.remote_control.token = self._remote_token_edit.text().strip()
 
         return config
 
@@ -531,6 +638,9 @@ class SettingsDialog(QDialog):
         portable_was = is_portable_mode()
 
         config = self._collect_config_from_widgets()
+        if config.remote_control.enabled and not config.remote_control.token:
+            config.remote_control.enabled = False
+            QMessageBox.warning(self, t("settings_title"), t("msg_remote_token_required"))
         save_config(config)
 
         portable_now = self._portable_check.isChecked()
@@ -539,13 +649,22 @@ class SettingsDialog(QDialog):
         elif not portable_now and portable_was:
             disable_portable_mode()
 
+        language_changed = config.ui.language != original_language
+        # Si el idioma acaba de cambiar, el aviso (y su título) se
+        # muestran ya en el idioma recién elegido, no en el que sigue
+        # activo hasta el próximo arranque -- si no, el texto
+        # confirmando el cambio saldría en el idioma que se acaba de
+        # dejar de usar.
+        msg_lang = config.ui.language if language_changed else None
+        translate = (lambda key: t_in(msg_lang, key)) if msg_lang else t
+
         messages = []
-        if config.ui.language != original_language:
-            messages.append(t("msg_restart_language"))
+        if language_changed:
+            messages.append(translate("msg_restart_language"))
         if portable_now != portable_was:
-            messages.append(t("msg_restart_portable"))
+            messages.append(translate("msg_restart_portable"))
         if messages:
-            QMessageBox.information(self, t("settings_title"), "\n\n".join(messages))
+            QMessageBox.information(self, translate("settings_title"), "\n\n".join(messages))
 
         self.accept()
 

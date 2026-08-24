@@ -432,7 +432,15 @@ class SoulseekBackend(NetworkBackend):
             return
 
         if self._shared_library is not None:
-            self._shared_library.rescan()
+            # need_sha1=False, need_ed2k=False: Soulseek busca un fichero
+            # compartido por ruta/nombre (find_by_native_path), no por
+            # hash, así que no hace falta pagar el coste de hashear todo
+            # el contenido (ver SharedLibrary.rescan). En segundo plano
+            # sin esperar (ver SharedLibrary.ensure_scanning): aunque ya
+            # no hashea, sigue siendo un os.walk() síncrono sobre la
+            # carpeta compartida, y así connect() no se queda esperando
+            # ni un instante a que termine de indexarla.
+            self._shared_library.ensure_scanning(need_sha1=False, need_ed2k=False)
 
         reader, writer = await proxy_open_connection(SERVER_HOST, SERVER_PORT, proxy=self._proxy, timeout=15.0)
         conn = _FramedConnection(reader, writer)

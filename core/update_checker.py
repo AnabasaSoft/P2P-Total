@@ -5,6 +5,7 @@ terceros, siguiendo la misma restricción de diseño que el resto del
 proyecto."""
 
 import json
+from dataclasses import dataclass, field
 
 from core.http_client import http_get
 from core.proxy import ProxyConfig
@@ -12,6 +13,18 @@ from core.version import VERSION
 
 _RELEASES_API_URL = "https://api.github.com/repos/AnabasaSoft/P2P-Total/releases/latest"
 _RELEASES_PAGE_URL = "https://github.com/AnabasaSoft/P2P-Total/releases/latest"
+
+
+@dataclass
+class UpdateInfo:
+    """Datos del último release disponible cuando hay una versión más
+    nueva que la actual. `assets` es la lista tal cual la da la API de
+    GitHub (cada elemento con al menos `name` y `browser_download_url`),
+    usada por `core.self_updater` para localizar el paquete adecuado a
+    este sistema operativo/tipo de instalación."""
+    version: str
+    release_url: str
+    assets: list[dict] = field(default_factory=list)
 
 
 def _parse_version(tag: str) -> tuple[int, ...]:
@@ -24,12 +37,11 @@ def _parse_version(tag: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-async def check_for_update(proxy: ProxyConfig | None = None, timeout: float = 8.0) -> tuple[str, str] | None:
-    """Devuelve (versión_nueva, url_de_la_release) si GitHub tiene
-    publicado un release más reciente que `VERSION`, o `None` si no lo
-    hay o si la comprobación falla (sin conexión, GitHub caído,
-    límite de peticiones anónimas agotado...) — nunca debe impedir que
-    la app arranque."""
+async def check_for_update(proxy: ProxyConfig | None = None, timeout: float = 8.0) -> UpdateInfo | None:
+    """Devuelve un `UpdateInfo` si GitHub tiene publicado un release más
+    reciente que `VERSION`, o `None` si no lo hay o si la comprobación
+    falla (sin conexión, GitHub caído, límite de peticiones anónimas
+    agotado...) — nunca debe impedir que la app arranque."""
     try:
         body = await http_get(
             _RELEASES_API_URL, timeout=timeout, proxy=proxy,
@@ -40,7 +52,11 @@ async def check_for_update(proxy: ProxyConfig | None = None, timeout: float = 8.
         if not tag:
             return None
         if _parse_version(tag) > _parse_version(VERSION):
-            return tag.lstrip("vV"), data.get("html_url") or _RELEASES_PAGE_URL
+            return UpdateInfo(
+                version=tag.lstrip("vV"),
+                release_url=data.get("html_url") or _RELEASES_PAGE_URL,
+                assets=data.get("assets") or [],
+            )
     except Exception:
         pass
     return None

@@ -2415,6 +2415,575 @@ todavía ningún release publicado en el repositorio, la API responde
 `404` y el código lo maneja sin error (no ofrece actualización, como
 es de esperar hasta que se publique el primer release).
 
+### Punto 34.1 del backlog: mecanismo de auto-actualización real
+
+Hasta ahora `core/update_checker.py` solo avisaba de que había una
+versión más reciente con un enlace a la release de GitHub, sin
+descargar ni instalar nada — el usuario tenía que ir a mano a la
+página y reinstalar. Se añade la descarga y sustitución automática del
+paquete instalado, cuando el tipo de instalación concreto lo permite:
+
+- **AppImage** (Linux): se sustituye el propio fichero `.AppImage` en
+  su sitio (mismo mecanismo que usa AppImageUpdate) y se relanza vía
+  `os.execv`.
+- **Instalador de Windows** (Inno Setup, sobre el build "onedir"): se
+  descarga el nuevo `P2P-Total-Setup-*.exe` y se ejecuta en modo
+  silencioso (`/VERYSILENT /SUPPRESSMSGBOXES /NORESTART
+  /CLOSEAPPLICATIONS /RESTARTAPPLICATIONS`) mediante `os.startfile(...,
+  "runas", ...)`, que cierra la app en marcha, reemplaza los ficheros y
+  la vuelve a abrir sola sin que el usuario tenga que hacer nada más
+  salvo aceptar el aviso de Control de cuentas de usuario (UAC) que
+  pide `os.startfile` con el verbo "runas" — obligatorio porque el
+  instalador escribe en Program Files (ver más abajo "Arreglo:
+  auto-actualización en Windows no pedía elevación de UAC" para el
+  motivo exacto y la validación). Se añadieron también explícitamente
+  `CloseApplications=yes`/`RestartApplications=yes` en
+  `packaging/windows/installer.iss` para que ese comportamiento no
+  dependa de valores por defecto que puedan cambiar entre versiones de
+  Inno Setup.
+- **macOS** (`.app` dentro de un `.dmg`): se monta el `.dmg` con la
+  propia herramienta del sistema `hdiutil` (parte del propio macOS, no
+  un "cliente P2P externo" en el sentido de la restricción de diseño
+  del proyecto), se sustituye el `.app` en `/Applications` y se
+  relanza con `open -n`.
+
+Los paquetes `.deb`/`.rpm` (instalados en `/usr`, gestionados por
+`apt`/`dnf`, requerirían root) y el `.flatpak` autónomo (gestionado
+por Flatpak) NO se auto-actualizan — no es seguro pisar desde dentro
+de la propia app lo que gestiona otra herramienta del sistema — así
+que para esos tres casos (`core/self_updater.py`,
+`InstallKind.LINUX_PACKAGE`/`InstallKind.FLATPAK`, más
+`InstallKind.SOURCE` para cuando se ejecuta desde código fuente en
+desarrollo) `can_self_update()` devuelve `False` y la GUI cae de
+vuelta al aviso de siempre con el botón "Descargar" que abre la
+página del release.
+
+Piezas nuevas: `core/self_updater.py` (detecta el tipo de instalación
+actual vía `$APPIMAGE`, `$FLATPAK_ID`/`/.flatpak-info`, `sys.frozen` y
+`sys.platform`; localiza el asset correcto dentro de la lista de la
+API de GitHub por patrón de nombre; y aplica la actualización según el
+tipo); `core/http_client.http_download`, nueva función hermana de
+`http_get` que escribe el cuerpo de la respuesta a fichero en
+streaming (con progreso vía `progress_cb`) en vez de acumularlo entero
+en memoria, reutilizando la misma lógica de conexión/redirecciones/
+`chunked`; `core/update_checker.check_for_update` ahora devuelve un
+`UpdateInfo` (versión, url de la release, lista de assets) en vez de
+solo la tupla `(versión, url)`, para que `self_updater` pueda buscar
+el asset adecuado sin una segunda petición a la API. En la GUI,
+`UpdateAvailableDialog` gana un botón "Actualizar ahora" (texto
+distinto también, `update_dialog_text_auto`) cuando
+`can_self_update()` es cierto y se ha encontrado el asset
+correspondiente; al pulsarlo, `MainWindow._run_self_update` descarga
+con un `QProgressDialog` modal y, si todo va bien, llama a
+`apply_update_and_relaunch` y cierra la app con normalidad (guardando
+configuración, desconectando redes) como hace "Salir". Nuevas claves
+i18n (`update_dialog_text_auto`, `update_dialog_update_now`,
+`update_downloading`, `update_download_failed`,
+`update_apply_failed`) en los 13 idiomas.
+
+Validado con un script aislado (no hay suite de tests todavía, ver
+punto 34.2 de este mismo backlog) contra un servidor HTTP local
+sintético: `http_download` descarga y escribe a fichero correctamente
+en los tres casos (directo con `Content-Length`, tras una redirección
+302, y con `Transfer-Encoding: chunked`), verificado con hash SHA-256
+byte a byte sobre 2.5 MB; `detect_install_kind()` distingue
+correctamente los seis casos (`APPIMAGE`, `FLATPAK`, `SOURCE`,
+`WINDOWS_ONEDIR`, `MACOS_APP`, `LINUX_PACKAGE`) manipulando variables
+de entorno y `sys.frozen`/`sys.platform`; `find_update_asset()`
+localiza el fichero correcto para cada plataforma dentro de una lista
+de assets realista con los seis nombres reales que genera
+`.github/workflows/build-packages.yml`; y `apply_update_and_relaunch`
+se probó de punta a punta para los tres tipos auto-actualizables: para
+`APPIMAGE`, sustituye de verdad el fichero en disco, lo deja
+ejecutable y llama a `os.execv` con la ruta correcta (con `os.execv`
+sustituido por un mock para no matar el proceso de prueba); para
+`WINDOWS_ONEDIR`, con `os.startfile` sustituido por un mock, se
+comprobó que se invoca con el verbo `"runas"` y los flags silenciosos
+correctos; para `MACOS_APP`, con `subprocess.run`/`subprocess.Popen`
+sustituidos por mocks (no hay Windows/macOS reales en este entorno de
+desarrollo Linux) se comprobó que se invocan con los argumentos
+correctos — `hdiutil attach`/copia real del `.app` a un
+`/Applications` falso/`hdiutil detach`/`open -n`. Además se comprobó
+que `gui/widgets/update_dialog.py` construye bien los dos textos/juegos
+de botones y que `gui/main_window.py` importa sin errores con el nuevo
+cableado, ambos en modo headless (`QT_QPA_PLATFORM=offscreen`).
+**Pendiente real**: no se ha podido validar en vivo contra una máquina
+Windows o macOS real (el entorno de desarrollo es Linux), así que la
+ejecución real del instalador silencioso y del montaje/copia vía
+`hdiutil` solo está verificada por mocks, no de punta a punta contra
+esos sistemas operativos.
+
+### Arreglo: auto-actualización en Windows no pedía elevación de UAC
+
+Al revisar con el usuario ("¿funcionarán todas las actualizaciones
+incluido en windows, macos, flatpak y appimage?") si el punto 34.1
+funcionaría de verdad en los cuatro casos, salió un fallo real en el
+diseño original de `_apply_windows_installer` (`core/self_updater.py`):
+lanzaba el instalador descargado con `subprocess.Popen`, que usa
+`CreateProcess` de Win32 por debajo. `CreateProcess` **no** pide
+elevación de UAC por sí solo aunque el ejecutable lleve un manifiesto
+que la exija (el que genera Inno Setup por defecto, porque instala en
+Program Files) — directamente falla con `WinError 740: se requiere
+elevación`, sin ni siquiera llegar a mostrar el aviso de Control de
+cuentas de usuario al usuario. Solo `ShellExecuteEx` con el verbo
+`"runas"` (expuesto en Python como `os.startfile(ruta, "runas",
+argumentos)`) sabe pedir esa elevación.
+
+Arreglado sustituyendo el `subprocess.Popen` por
+`os.startfile(str(downloaded_path), "runas", args)`. De paso esto
+resuelve también un problema derivado que tampoco estaba cubierto: si
+el usuario cancela el aviso de UAC, `ShellExecuteEx` (y por tanto
+`os.startfile`) lo devuelve como una excepción en el momento mismo de
+la llamada — que ya capturaba `MainWindow._run_self_update` — así que
+la app nunca llega a darse por actualizada ni a cerrarse sola si la
+elevación se rechaza; antes, con `subprocess.Popen`, ni siquiera se
+habría enterado de que el lanzamiento había fallado por falta de
+privilegios, y con el fallo silencioso (`WinError 740`) tampoco se
+habría comprobado en la práctica si servía para algo.
+
+`packaging/windows/installer.iss` no necesitó cambios: `CloseApplications=yes`/
+`RestartApplications=yes` ya estaban ahí desde el propio punto 34.1 y
+siguen aplicando igual una vez que el instalador arranca elevado.
+
+Validado (de nuevo con `os.startfile` sustituido por un mock, sin
+Windows real disponible) en dos escenarios: la llamada normal usa el
+verbo `"runas"` y lleva los cinco flags silenciosos correctos; y
+simulando que el usuario cancela el aviso de UAC (el mock lanza
+`OSError(1223, ...)`, el código de error real de Windows para
+"cancelado por el usuario"), la excepción se propaga tal cual sin
+tragarse en ningún punto intermedio.
+
+### Punto 34.2 del backlog: suite de tests automatizados
+
+Hasta ahora el proyecto no tenía ni un solo test: toda la validación de
+cada red se había hecho a mano contra infraestructura real (ver el
+resto de este `DEVLOG.md`) y, para lo que no dependía de red, con
+scripts sueltos en el directorio de scratchpad que se borraban después
+de usarlos — cero regresión automática. Se añade `tests/` con
+[pytest](https://pytest.org) + `pytest-asyncio`
+(`requirements-dev.txt`, no hace falta para ejecutar la app, solo para
+desarrollarla) y `pytest.ini` (`pythonpath = .`, `asyncio_mode = auto`
+para no tener que anotar cada test async a mano).
+
+Alcance deliberado: cubrir la lógica **pura y determinista** de cada
+módulo (parsers, codecs binarios, hashes, round-trips de
+configuración, paridad de claves i18n) montando servidores TCP locales
+sintéticos cuando hace falta ejercitar E/S real sin tocar la red de
+verdad (mismo enfoque ya usado a mano en el punto 34.1). Lo que sí
+sigue validándose manualmente contra infraestructura real de cada red
+(handshakes de protocolo completos, descargas de extremo a extremo)
+sigue siendo así a propósito — es una decisión consciente, no una
+laguna: ese tipo de test de integración contra Soulseek/DC++/G2/eD2k
+reales no tiene sentido en un CI automático (dependería de que esos
+servidores/hubs/peers externos estén disponibles en cada ejecución) y
+ya está documentado exhaustivamente en el resto de este fichero.
+
+157 tests en 15 ficheros bajo `tests/`, todos deterministas y sin
+tocar la red real ni el `config.json`/`downloads.db` del usuario
+(usan `tmp_path` de pytest o pasan un `path`/env var explícito a las
+funciones bajo prueba):
+
+- `test_md4.py`: los 7 vectores de prueba oficiales del RFC 1320.
+- `test_tiger_tth.py`: Tiger/192 y TTH, tests de regresión (golden
+  master) contra la salida ya validada de la implementación actual
+  (el propio docstring de `core/tiger.py` documenta que las tablas
+  S-box ya se comprobaron bit a bit contra la referencia en C de
+  RHash).
+- `test_aich.py`: `block_sha1`/`combine_sha1` contra `hashlib`
+  directamente, `block_count` y el caso de `levels_to_part` para un
+  fichero de una sola parte y de dos partes iguales.
+- `test_models.py`: la propiedad calculada `Download.progress` (casos
+  límite: tamaño 0, completado, sobrepasado) y que los valores string
+  de `Network` no cambien (romperían `config.json`/`downloads.db` ya
+  guardados).
+- `test_file_types.py`, `test_rate_limiter.py` (async, con el cubo de
+  fichas real esperando ~0.5 s en un caso para comprobar que sí limita
+  de verdad), `test_config.py` (round-trip completo de
+  `save_config`/`load_config`, migración del campo antiguo
+  `shared_folder` singular, permisos 600 del fichero).
+- `test_http_client.py`: `_dechunk` y, contra un servidor
+  `asyncio.start_server` local, `http_get`/`http_download` con cuerpo
+  normal, `chunked`, redirección 302 y progreso en streaming a disco.
+- `test_update_checker.py` y `test_self_updater.py`: la comparación de
+  versiones, y los seis `InstallKind`, `find_update_asset` y
+  `apply_update_and_relaunch` del punto 34.1 (incluida la regresión
+  específica del arreglo de UAC: se comprueba que se usa el verbo
+  `"runas"` y que una cancelación de UAC se propaga como excepción).
+- `test_i18n.py`: los 13 idiomas tienen exactamente el mismo juego de
+  claves que español (ni de más ni de menos) y ninguna traducción
+  vacía — la propia convención documentada en `gui/i18n.py` es traducir
+  1:1 en vez de apoyarse en el fallback.
+- `test_dcpp_backend.py`, `test_torrent_backend.py`,
+  `test_g2_backend.py`, `test_emule_backend.py`, `test_soulseek_backend.py`,
+  `test_proxy.py`, `test_saved_search_manager.py`: parsers/codecs
+  puros de las cinco redes (enlaces `dchub://`/`ed2k://`, `$SR` NMDC,
+  `lock_to_key`, códec de trama G2 con round-trip encode/decode, tags
+  eD2k, framing TCP/UDP eD2k, empaquetado binario de Soulseek,
+  dirección SOCKS5, clave de deduplicación de búsquedas guardadas).
+
+Un error propio detectado y corregido durante la escritura de estos
+tests, antes de que llegara a colarse: al escribir a mano un caso de
+`lock_to_key` con lock `[5, 5]` se dio por hecho el resultado esperado
+sin ejecutarlo, y no coincidía con la salida real de la implementación
+(ya validada contra hubs DC++ reales) — se recalculó a mano
+correctamente y se corrigió el valor esperado en el test, no la
+implementación. Recuerda por qué esta suite se basa en vectores
+oficiales (RFC 1320) o en trazar el algoritmo a mano y **verificarlo
+contra la implementación antes de fijarlo como esperado**, nunca en
+"debería dar más o menos esto".
+
+Validado ejecutando `python -m pytest` desde la raíz del proyecto: 157
+passed, tanto con `QT_QPA_PLATFORM=offscreen` como sin ella (ningún
+test instancia `QApplication`, ni siquiera `test_i18n.py`, que solo
+importa el diccionario de traducciones). Añadido `.pytest_cache/` a
+`.gitignore`.
+
+### Punto 34.3 del backlog: cifrado de protocolo BitTorrent (MSE/PE) y soporte de µTP
+
+El backend de BitTorrent corre sobre `libtorrent` (librería embebida,
+no proceso externo — ver la sección "Sobre la elección de tecnología"
+más abajo), que ya trae MSE/PE y µTP implementados dentro de la propia
+librería; a diferencia de las otras cuatro redes (reimplementadas
+desde cero estudiando el protocolo), aquí "implementar" el punto 34.3
+no significa escribir el protocolo de cifrado o el transporte UDP a
+mano, sino: (1) dejar de depender implícitamente de los valores por
+defecto de `libtorrent` -que, comprobado a mano contra
+`session.get_settings()`, ya traían el cifrado en modo "enabled" y
+`µTP` activo en ambos sentidos incluso sin tocar `settings` al crear
+la sesión- y fijarlos explícitamente en `TorrentBackend.connect()`
+como una decisión visible y documentada; y (2) exponer visibilidad real
+de que se están usando, ya que antes no había ninguna forma de saber
+si un peer concreto negoció cifrado o si una conexión iba por µTP en
+vez de TCP.
+
+Cambios:
+- `TorrentBackend.connect()`: añade explícitamente `out_enc_policy` /
+  `in_enc_policy` = `pe_enabled` (no `pe_forced`: forzar cifrado
+  tiraría por la borda a los muchos peers de redes públicas reales que
+  todavía no lo soportan, sin necesidad) y `allowed_enc_level` =
+  `pe_both` (acepta tanto RC4 como el modo de solo-handshake-ofuscado),
+  más `enable_outgoing_utp`/`enable_incoming_utp` = `True`.
+- `TorrentBackend.get_stats()`: tres claves nuevas, calculadas en cada
+  llamada a partir de los peers realmente conectados ahora mismo en las
+  descargas activas (`handle.get_peer_info()`, comprobando el flag
+  `rc4_encrypted`/`plaintext_encrypted` de cada peer) y del contador
+  agregado de la sesión (`session.status().utp_stats["num_connected"]`):
+  `connected_peers`, `encrypted_peers`, `utp_connections`. Se muestran
+  en la pestaña Red de la GUI igual que el resto de detalles de
+  conexión en vivo (`gui/widgets/network_tab.py`, con sus claves de
+  traducción `stat_connected_peers`/`stat_encrypted_peers`/
+  `stat_utp_connections` añadidas a los 13 idiomas de `gui/i18n.py`).
+
+Validado en dos niveles:
+- `tests/test_torrent_backend.py` (nuevo, dos tests async que sí crean
+  una `lt.session` real -local, sin conectar a ningún peer-): que
+  `connect()` deja la sesión con la política de cifrado y `µTP`
+  esperada, y que `get_stats()` devuelve las tres claves nuevas a cero
+  cuando no hay peers conectados.
+- Contra la red BitTorrent real (vía `TorrentBackend`/`DownloadManager`
+  de producción, no un simulador): se arrancó la descarga real del
+  torrent oficial `ubuntu-24.04.1-desktop-amd64.iso` (53 seeds en el
+  indexador) y se sondeó `get_stats()` cada 2s durante 40s. Con tráfico
+  real llegó a haber más de 150 peers conectados simultáneamente,
+  `utp_connections` subió hasta 34 en paralelo (µTP funcionando de
+  verdad, no solo activado sin uso) y `encrypted_peers` llegó a 1 -bajo
+  pero no cero, esperable: hoy son minoría los clientes BitTorrent que
+  siguen negociando MSE/PE en redes públicas, pero confirma que la
+  negociación de cifrado sí ocurre de punta a punta contra un peer real
+  cuando el otro lado lo soporta-. La descarga se canceló nada más
+  confirmarlo, sin llegar a completarla (no hacía falta para validar
+  este punto, y el archivo son casi 6 GB).
+
+### Punto 34.4 del backlog: auditoría de IPv6 en Soulseek/Gnutella2/eD2k-Kad
+
+El punto 19 (ver más abajo, "Punto 19 — Soporte de IPv6") ya había
+investigado y documentado, backend por backend, que Soulseek,
+Gnutella2 y eD2k/Kad tienen un límite de protocolo genuino e
+infranqueable en sus campos binarios de dirección: son de ancho fijo
+(4 o 6 bytes) y ningún cliente real de esas redes tiene jamás una
+variante de campo para IPv6. El punto 34.4 pedía revisar caso por
+caso, backend por backend, qué parte concreta del código impone esa
+limitación, para confirmar que no quedaba ningún hueco sin
+documentar ni ninguna mejora real todavía posible.
+
+Auditoría completa (cada punto del código donde se lee o escribe una
+dirección en binario en los tres backends):
+- **Soulseek** (`soulseek_backend.py`): un único punto de lectura,
+  `_BinaryReader.ip()`, usado en las dos rutas donde el servidor manda
+  la IP de un peer (`ConnectToPeer` y respuestas de búsqueda con
+  conexión directa). No hay ningún punto de escritura: el servidor
+  infiere nuestra propia IP del socket, nunca se la mandamos
+  explícitamente. Sin huecos.
+- **Gnutella2** (`g2_backend.py`): un único par lectura/escritura,
+  `_parse_address()`/`_encode_g2_address()`, usados en los cuatro
+  sitios del código donde se lee o construye una dirección (`/NA`,
+  `/CH`, `/PUSH` entrante y saliente). Sin huecos.
+- **eD2k/Kad** (`emule_backend.py`): un único punto de lectura,
+  `_read_wire_ip()`, usado en `parse_nodes_dat`, la lista de
+  contactos Kad de `KADEMLIA2_RES`/`KADEMLIA2_BOOTSTRAP_RES`, la
+  lista de servidores que el servidor eD2k va "soplando" en caliente,
+  y `OP_CALLBACKREQUESTED`; más otros tres puntos de escritura/lectura
+  puntuales pero igual de fijos a 4 bytes: `client_id`
+  (`_build_hello_payload`, HighID = la propia IP como uint32), el tag
+  `TAG_SOURCEIP` de las respuestas de fuentes Kad, y el payload de
+  `KADEMLIA_FIREWALLED_RES`. `_read_wire_ip()` no tenía todavía la
+  nota explícita de límite de protocolo que sí tenían ya `ip()` de
+  Soulseek y `_parse_address()` de G2 desde el punto 19 — añadida
+  ahora, referenciando los otros tres puntos fijos del mismo backend.
+
+Conclusión: no queda ningún hueco de documentación ni ninguna mejora
+real de IPv6 pendiente en las tres redes — el punto ya estaba resuelto
+de facto por el punto 19, y esta auditoría lo confirma y lo deja
+explícito caso por caso. Único cambio de código: el docstring nuevo de
+`_read_wire_ip()`. Validado con la suite completa de pytest (163 tests
+en verde, sin cambios de comportamiento).
+
+### Punto 34.5 del backlog: planificador de ancho de banda por franja horaria
+
+Sobre los límites globales de velocidad ya existentes (punto 2,
+`Config.global_download_limit_kbps`/`global_upload_limit_kbps`), se
+añade un planificador que permite fijar unos límites "alternativos"
+que sustituyen a los normales solo durante una franja horaria del día
+configurable (p.ej. limitar más de noche, o durante horas de trabajo),
+volviendo a los límites normales fuera de esa franja — mismo concepto
+que los "límites alternativos programados" de qBittorrent/aMule.
+
+Cambios:
+- `core/config.py`: dataclass nueva `ScheduleConfig` (`enabled`,
+  `start`/`end` en formato "HH:MM", `download_limit_kbps`/
+  `upload_limit_kbps`), campo `Config.schedule` nuevo, con lectura/
+  escritura en `load_config()`/`save_config()` igual que el resto de
+  sub-configs (valores por defecto si el `config.json` es de antes de
+  este punto).
+- `core/bandwidth_scheduler.py` (nuevo): `is_within_schedule(start,
+  end, now)` — pura, admite que la franja cruce la medianoche
+  (`start` > `end`, p.ej. "23:00" a "07:00") y que `start == end`
+  signifique franja de 24h; `effective_limits_kbps(config, now)` —
+  devuelve los límites del planificador si está activado y toca, o si
+  no los límites globales normales; y `BandwidthScheduler`, mismo
+  patrón de manager con bucle en segundo plano que ya usan
+  `WatchFolderManager`/`SavedSearchManager` (`start()`/`stop()`), que
+  cada 30s reevalúa si ha cambiado el estado activo/inactivo de la
+  franja y, solo si ha cambiado, reaplica los límites globales — un
+  cambio hecho a mano desde Preferencias ya se aplica al momento por
+  su cuenta, este bucle solo cubre la transición automática al llegar
+  la hora sin que el usuario toque nada.
+- `core/rate_limiter.py`: `apply_global_limits(config)` pasa a usar
+  `effective_limits_kbps(config)` en vez de leer directamente los
+  campos globales de `Config`, así que las cuatro redes "manuales"
+  (que comparten sus limitadores) respetan el planificador sin ningún
+  cambio adicional en cada backend.
+- `gui/connection_manager.py`: `_apply_speed_limits()` (BitTorrent no
+  comparte el limitador de `core.rate_limiter` — usa el suyo propio de
+  libtorrent) también pasa a usar `effective_limits_kbps(config)`.
+- `main.py`: `cmd_download` (descarga de un tiro por CLI) igual, por
+  consistencia.
+- `gui/main_window.py`: `MainWindow` arranca un
+  `BandwidthScheduler(self._connection_manager.apply_global_speed_limits)`
+  al construirse (mismo sitio que `WatchFolderManager`) y lo para en
+  `closeEvent`.
+- `gui/widgets/settings_dialog.py`: pestaña General, justo debajo de
+  los límites globales — checkbox para activar el planificador, un
+  rango de horas (`QTimeEdit` de inicio y fin) y los dos límites
+  alternativos, con un tooltip explicando el cruce de medianoche.
+- `gui/i18n.py`: cinco claves nuevas
+  (`chk_schedule_enabled`/`lbl_schedule_time_range`/
+  `lbl_schedule_download_limit`/`lbl_schedule_upload_limit`/
+  `schedule_tooltip`) traducidas en los 13 idiomas.
+
+Validado con pytest (`tests/test_bandwidth_scheduler.py`, nuevo:
+`is_within_schedule` con franja normal, cruzando medianoche y de 24h;
+`effective_limits_kbps` con el planificador activado/desactivado/fuera
+de franja; `BandwidthScheduler._check_once` solo reaplica en las
+transiciones de estado, no en cada evaluación — y `tests/test_config.py`,
+round-trip de `ScheduleConfig` y valores por defecto con un
+`config.json` antiguo sin la clave) y con un script directo contra
+`ConnectionManager`/`TorrentBackend` de producción (sin GUI): con el
+planificador activado y una franja que cubre la hora real del momento
+de la prueba, `connect_network()` deja la sesión real de libtorrent
+con los límites alternativos (100/50 kB/s) en vez de los globales
+(1000/500 kB/s); al desactivar el planificador y volver a aplicar los
+límites, la sesión vuelve a los globales normales — confirmado leyendo
+`session.get_settings()["download_rate_limit"]`/`"upload_rate_limit"`
+en los dos casos.
+
+### Punto 34.6 del backlog: control remoto / API web
+
+Permite gestionar las descargas (listar, pausar, reanudar, cancelar,
+borrar, buscar y añadir nuevas) desde el navegador de cualquier
+dispositivo de la red local sin abrir la ventana de escritorio —
+pensado para usarlo con la aplicación minimizada a la bandeja del
+sistema (ver punto 33 del backlog). Respeta la restricción de diseño
+del proyecto: nada de frameworks HTTP de terceros (Flask/aiohttp/
+FastAPI) — es un servidor HTTP/1.1 mínimo escrito a mano sobre
+`asyncio.start_server()`, con el mismo estilo "parseo crudo" que ya
+usa `core/http_client.py` para el lado cliente.
+
+Cambios:
+- `core/config.py`: dataclass nueva `RemoteControlConfig` (`enabled`,
+  `host`, `port`, `token`), campo `Config.remote_control` nuevo, con
+  lectura/escritura en `load_config()`/`save_config()` igual que el
+  resto de sub-configs (valores por defecto si el `config.json` es de
+  antes de este punto). El `token` se guarda en el keyring del sistema
+  operativo igual que las contraseñas de red (`_keyring_get`/
+  `_keyring_set`/`_keyring_password_or`), con caída a texto plano en
+  el propio json en modo portable o si el keyring no está disponible.
+  Por seguridad, desactivado por defecto, con `host` por defecto
+  `"127.0.0.1"` (solo localhost) y sin `token` de fábrica — hace falta
+  generar uno propio antes de poder activarlo, porque de lo contrario
+  cualquiera con acceso al puerto podría gestionar las descargas.
+- `core/remote_control.py` (nuevo): `RemoteControlServer`, mismo
+  patrón de manager en segundo plano que `WatchFolderManager`/
+  `BandwidthScheduler` (`start()`/`stop()`, más `reload()` para
+  cuando cambian los ajustes desde Preferencias sin reiniciar la
+  app). Si `remote_control.enabled` es falso o no hay `token`
+  configurado, el servidor ni siquiera intenta escuchar en el puerto.
+  Implementa a mano el parseo de peticiones HTTP/1.1
+  (`_handle_client`/`_handle_request`/`_route`) y expone una API REST
+  en JSON que es un adaptador fino sobre los métodos ya existentes de
+  `DownloadManager`/`ConnectionManager` (no duplica ninguna lógica de
+  gestión de descargas): `GET /api/downloads`, `GET /api/networks`,
+  `POST /api/search`, `POST /api/downloads` (nueva descarga),
+  `POST /api/downloads/{id}/{pause|resume|cancel}`,
+  `DELETE /api/downloads/{id}`. La autenticación va por token,
+  aceptado como cabecera `Authorization: Bearer <token>` o como
+  parámetro `?token=` en la URL (para poder enlazar directamente desde
+  marcadores del navegador del móvil); sin token válido, 401. También
+  sirve en `/` una página única con HTML/JS embebidos (`_INDEX_HTML`,
+  tema oscuro, JS vanilla sin dependencias) que guarda el token en
+  `localStorage` del navegador, refresca la tabla de descargas sola y
+  permite pausar/reanudar/cancelar/borrar y buscar+descargar desde ahí
+  mismo.
+- `gui/main_window.py`: `MainWindow` arranca un
+  `RemoteControlServer(self._download_manager, self._connection_manager)`
+  al construirse (mismo sitio que `BandwidthScheduler`), lo recarga
+  (`reload()`) al guardar cambios en Preferencias y lo para en
+  `closeEvent`.
+- `gui/widgets/settings_dialog.py`: pestaña nueva "Control remoto",
+  justo después de la de proxy — checkbox de activación, campos de
+  host y puerto, campo de token con un botón "Generar…" que rellena
+  uno aleatorio con `secrets.token_urlsafe(24)`, y una nota explicando
+  el riesgo de exponerlo a `0.0.0.0`. Al guardar, si está activado sin
+  token se desactiva solo y se avisa con un mensaje, en vez de dejar
+  el servidor sin arrancar en silencio.
+- `gui/i18n.py`: ocho claves nuevas (`settings_tab_remote`,
+  `lbl_remote_enabled`, `lbl_remote_host`, `lbl_remote_port`,
+  `lbl_remote_token`, `btn_remote_generate_token`, `lbl_remote_note`,
+  `msg_remote_token_required`) traducidas en los 13 idiomas.
+
+Validado con pytest (`tests/test_remote_control.py`, nuevo: 17 tests
+extremo a extremo contra un `RemoteControlServer` real escuchando en
+`127.0.0.1` con puerto libre asignado por el sistema operativo —mismo
+enfoque que `test_http_client.py`, aquí el servidor es el propio
+código de producción y el cliente es un socket a mano— cubriendo la
+página raíz, rechazo sin token/con token incorrecto, token por
+cabecera y por query, estado de redes, pausar/reanudar/cancelar,
+acción sobre descarga inexistente (404), borrar, buscar (éxito y
+petición sin `query`, 400), arrancar una descarga nueva (201) y con
+campos incompletos (400), ruta desconocida (404), y que el servidor no
+llega a escuchar si falta el token o si está desactivado; y
+`tests/test_config.py`, round-trip de `RemoteControlConfig` y valores
+por defecto con un `config.json` antiguo sin la clave). Además,
+validado con un script directo (fuera de pytest) contra el
+`DownloadManager`/`ConnectionManager` reales de producción —no los
+dobles de prueba— monkeypatcheando solo la ruta de la base de datos y
+la carga de config para no tocar las del usuario: servidor real
+levantado, petición HTTP real de listado/búsqueda/descarga contra él,
+confirmando que el cableado de producción (`gui/main_window.py` →
+`RemoteControlServer` → `DownloadManager`) funciona de punta a punta y
+no solo con los dobles de prueba.
+
+### Punto 34.7 del backlog: mejoras de accesibilidad en la GUI
+
+Se auditó la GUI en busca de huecos reales de accesibilidad (lector de
+pantalla y navegación completa por teclado) en vez de aplicar cambios
+genéricos: `gui/widgets/settings_dialog.py` resultó estar ya accesible
+sin tocar nada, porque `QFormLayout.addRow(str, widget)` crea la
+`QLabel` y llama a `QLabel.setBuddy(widget)` automáticamente, así que
+todos sus campos ya tenían nombre accesible y navegación por Tab
+correctas de fábrica. El hueco real encontrado fue doble:
+
+1. Un bug de targeting en el menú contextual por teclado (tecla Menú/
+   Mayús+F10), presente en las 9 tablas de la app que usan
+   `Qt.ContextMenuPolicy.CustomContextMenu` + `customContextMenuRequested`
+   (el patrón que usa toda la app para sus menús contextuales). Qt
+   entrega los eventos `QEvent.Type.ContextMenu`, tanto de ratón como de
+   teclado, al `viewport()` interno de `QAbstractScrollArea` (del que
+   heredan `QTableView`/`QTableWidget`), no al widget en sí — y con
+   `CustomContextMenu` activado, Qt jamás llega a invocar el método
+   virtual `contextMenuEvent()`, así que ahí no se puede interceptar.
+   Además, al abrir el menú por teclado, Qt manda una posición sin
+   fiar (la del cursor del ratón, o (0, 0) si no está sobre la tabla)
+   en vez de la fila realmente seleccionada — y como el resto de la
+   app decide sobre qué fila actuar mirando esa posición
+   (`table.indexAt(pos)`), sin arreglo Mayús+F10 actuaba siempre sobre
+   la primera fila visible en vez de la fila con el foco de teclado,
+   ignorando en silencio la selección real del usuario.
+2. Varios campos de texto y tablas sin `accessibleName()`, invisibles
+   para un lector de pantalla al no tener ni label-buddy ni texto
+   propio que anunciar.
+
+Cambios:
+- `gui/widgets/accessible_table.py` (nuevo): `_KeyboardContextMenuMixin`
+  sobrescribe `viewportEvent()` (el gancho correcto para interceptar el
+  evento antes de que se emita `customContextMenuRequested`) — si el
+  evento es `QEvent.Type.ContextMenu` con `reason() ==
+  QContextMenuEvent.Reason.Keyboard` y la política es
+  `CustomContextMenu`, emite la señal a mano con la posición del centro
+  de `visualRect(currentIndex())` en vez de la posición sin fiar del
+  evento, y devuelve `True` para no propagar el evento sin corregir; en
+  cualquier otro caso (ratón, u otra política) delega en
+  `super().viewportEvent(event)` sin tocar nada. `AccessibleTableView`
+  y `AccessibleTableWidget` combinan el mixin con `QTableView`/
+  `QTableWidget` por herencia múltiple.
+- Se sustituyó `QTableView`/`QTableWidget` por
+  `AccessibleTableView`/`AccessibleTableWidget` en las 9 tablas con
+  menú contextual de la app: `downloads_tab.py`, `search_tab.py`,
+  `network_tab.py` (incluida su tabla con `SelectionMode.NoSelection`),
+  `alerts_tab.py`, `alert_results_dialog.py`, `browse_user_dialog.py`,
+  `browse_host_dialog.py` y `emule_friends_dialog.py`.
+- `setAccessibleName()` añadido donde faltaba nombre accesible propio:
+  la caja de búsqueda y la tabla de resultados de `search_tab.py`, la
+  tabla de descargas de `downloads_tab.py`, la tabla de red de
+  `network_tab.py`, el filtro de `hub_list_dialog.py`, y en
+  `chat_tab.py` el log, el campo de mensaje y la lista de usuarios de
+  cada sala/conversación abierta (`_RoomChatWidget`/`_PrivateChatWidget`).
+  Donde ya existía un texto adecuado que reutilizar en vez de crear una
+  clave nueva, se usó ese: el `windowTitle()` del propio diálogo en
+  `alert_results_dialog.py`/`browse_user_dialog.py`/
+  `browse_host_dialog.py`/`emule_friends_dialog.py`, y las claves ya
+  traducidas `tab_alerts`/`stats_totals_title`/`stats_history_title`
+  en `alerts_tab.py`/`stats_tab.py`.
+- `gui/widgets/downloads_tab.py`: atajo de teclado Supr
+  (`QShortcut(QKeySequence.StandardKey.Delete, ...)`, con
+  `Qt.ShortcutContext.WidgetShortcut` para que solo actúe con el foco
+  en la tabla) que dispara `_confirm_and_delete()` sobre la selección
+  actual — antes borrar una descarga solo era posible con el menú
+  contextual o un botón, no con teclado puro.
+- `gui/i18n.py`: ocho claves nuevas (`acc_search_query`,
+  `acc_downloads_table`, `acc_search_results_table`,
+  `acc_network_table`, `acc_chat_message`, `acc_chat_users`,
+  `acc_chat_log`, `acc_hub_filter`) traducidas en los 13 idiomas.
+
+Validado con un script directo (fuera de pytest, en
+`QT_QPA_PLATFORM=offscreen`, mismo patrón usado en puntos anteriores de
+la GUI): se mandaron eventos `QContextMenuEvent` reales vía
+`QApplication.sendEvent(widget.viewport(), event)` — no llamando a
+mano a `contextMenuEvent()`, que habría dado un falso positivo, como
+pasó en un primer intento fallido durante el desarrollo — confirmando
+que Mayús+F10 emite `customContextMenuRequested` con la posición de la
+fila seleccionada (no la fila 0) tanto en `AccessibleTableView` como en
+`AccessibleTableWidget` (incluido con `SelectionMode.NoSelection`, el
+caso de `NetworkTab`/`StatsTab`), que el clic derecho normal con
+ratón sigue emitiendo la posición tal cual sin alterar, que
+`DownloadsTab`/`HubListDialog` tienen `accessibleName()` no vacío en
+sus campos, que `ChatTab` se construye sin error, y que el atajo Supr
+de `DownloadsTab` dispara `_confirm_and_delete()` con la selección
+actual. Suite completa de pytest reejecutada sin regresiones (192
+passed) — este punto no añade tests nuevos a la suite porque toda su
+validación es de comportamiento de GUI, cubierta por el patrón de
+script scratchpad ya establecido en el proyecto.
+
 ### Arreglo: "Salir" desde la bandeja dejaba el proceso zombi (BitTorrent)
 
 Bug real reportado por el usuario: al pulsar "Salir" en el menú
@@ -2449,6 +3018,61 @@ más — nunca vuelve a bloquear el cierre de la aplicación. Validado
 reproduciendo el mismo escenario aislado 10 veces seguidas tras el
 arreglo: el proceso siempre termina en pocos segundos (entre 1 y 12s,
 frente a los 20-30s+ o cuelgue indefinido de antes) y sin errores.
+
+### Función: conectar automáticamente cada red al arrancar la GUI
+
+Petición explícita del usuario: "añade una opción en cada pestaña de
+las redes para autoconectar dicha red (en las preferencias)". Se
+añade un checkbox nuevo en la pestaña de cada una de las cinco redes
+de Preferencias (`gui/widgets/settings_dialog.py`) que, al marcarlo,
+hace que esa red se conecte sola nada más arrancar la GUI, sin
+esperar a que el usuario pulse "Conectar" a mano.
+
+Cambios:
+- `core/config.py`: campo `auto_connect: bool = False` nuevo en las
+  cinco dataclasses de config por red (`TorrentConfig`,
+  `SoulseekConfig`, `DCPPConfig`, `Gnutella2Config`, `EMuleConfig`),
+  con lectura en `load_config()` (con valor por defecto `False` para
+  seguir cargando sin romper config.json de versiones anteriores que
+  no tengan la clave) y escritura automática en `save_config()` (ya
+  serializa cada sub-config entero vía `asdict()`). Método nuevo
+  `Config.auto_connect_networks() -> list[Network]` que devuelve, en
+  el mismo orden que recorre `core.models.Network`, las redes
+  marcadas.
+- `gui/widgets/settings_dialog.py`: un `QCheckBox` nuevo al principio
+  de cada una de las cinco pestañas de red, leído en
+  `_collect_config_from_widgets()` igual que el resto de campos.
+- `gui/connection_manager.py`: método nuevo
+  `ConnectionManager.autoconnect_configured_networks()`, que lee la
+  config y lanza `connect_network()` en segundo plano (sin esperar,
+  igual que un "Conectar" manual desde el menú Redes) para cada red
+  de `Config.auto_connect_networks()`. Reutiliza tal cual el manejo
+  de errores ya existente de `connect_network()`: si una red marcada
+  no está configurada (por ejemplo Soulseek sin usuario/contraseña),
+  la conexión falla igual que si se hubiera pulsado "Conectar" a
+  mano y la red queda en `STATUS_ERROR` visible en el piloto de la
+  pestaña Red, sin crashear la GUI ni bloquear el arranque de las
+  demás redes.
+- `gui/main_window.py`: `MainWindow.__init__` llama a
+  `self._connection_manager.autoconnect_configured_networks()` una
+  sola vez, justo antes de lanzar la comprobación de actualizaciones
+  al final del constructor.
+- `gui/i18n.py`: clave `chk_auto_connect` nueva, traducida en los 13
+  idiomas soportados.
+
+Validado con pytest (`tests/test_config.py`: round-trip de
+`auto_connect` a través de guardar/cargar JSON para varias redes a la
+vez, filtrado correcto de `auto_connect_networks()`, y que sigue
+cargando bien un config.json antiguo sin la clave) y con un script
+directo contra `ConnectionManager`/`Config` de producción (sin GUI,
+por la instrucción del usuario de no hacer pruebas manuales de
+interfaz gráfica): con `torrent.auto_connect = True` y
+`soulseek.auto_connect = True` en el config, al llamar a
+`autoconnect_configured_networks()` BitTorrent llega a
+`STATUS_CONNECTED` de verdad (conexión real a la sesión de
+libtorrent) mientras que Soulseek, sin usuario/contraseña
+configurados, acaba en `STATUS_ERROR` sin lanzar ninguna excepción ni
+afectar a la conexión de BitTorrent.
 
 ## Notas sobre cada red (para cuando las abordemos)
 
@@ -3132,7 +3756,11 @@ parezca más fácil o más interesante); y el `README.md` se actualiza
 siguiente — no se acumulan varios puntos sin documentar. Cuando un
 punto quede solo parcialmente resuelto (como el 21, ver más abajo), se
 marca qué parte está hecha y cuál sigue pendiente, y esa parte
-pendiente se termina antes de continuar con el resto del orden.
+pendiente se termina antes de continuar con el resto del orden. Lo
+mismo aplica al 34.4 (ver más abajo): se investigó a fondo y se
+confirmó que ya estaba resuelto de facto por el trabajo del punto 19,
+así que se documenta formalmente como completado en vez de dejarlo
+indefinido.
 
 El punto 1 ya estaba hecho (para cuatro de las cinco redes) y el punto
 21 se abordó parcialmente (solo la visibilidad) antes de que existiera
@@ -3167,7 +3795,12 @@ sub-puntos 33.1 a 33.9) también se completaron ya (ver "Estado
 actual"), así que la posición actual en el backlog es: el punto 34
 (mejoras post-empaquetado, ver más abajo), resolviendo sus sub-puntos
 en el mismo orden estricto, uno detrás de otro (el 21 ya está
-completo).
+completo). Dentro del 34, los sub-puntos 34.1 (mecanismo de
+auto-actualización real), 34.2 (suite de tests automatizados), 34.3
+(cifrado MSE/PE y µTP en BitTorrent), 34.4 (auditoría de IPv6 en
+Soulseek/Gnutella2/eD2k-Kad), 34.5 (planificador de ancho de banda
+por franja horaria) y 34.6 (control remoto / API web) ya se
+completaron también, así que toca el 34.7.
 
 **Compartir y subir archivos** (el hueco más grande, con diferencia):
 1. Compartir una carpeta propia y servir descargas a otros peers en
@@ -3768,27 +4401,317 @@ búsqueda/descarga; falta la parte social):
     esa prohibición, así que no se incluye como tarea. Pendientes de
     resolver en orden estricto:
 
-    34.1. Mecanismo de auto-actualización real: hoy `core/update_checker.py`
-          (ver "Control de versión: v1.0 y aviso de actualización contra
-          GitHub" en "Estado actual") solo avisa con un enlace a la
-          release de GitHub cuando hay una versión nueva, sin descargar
-          ni instalar nada — falta la descarga y sustitución automática
-          del paquete instalado (o al menos del build "onedir").
-    34.2. Suite de tests automatizados: el proyecto no tiene ningún test
-          hoy (ni unitario ni de integración); toda la validación hasta
-          ahora ha sido manual contra infraestructura real de cada red.
-    34.3. Cifrado de protocolo BitTorrent (MSE/PE) y soporte de µTP,
-          hoy ausentes del backend de BitTorrent.
-    34.4. Soporte completo de IPv6 en Soulseek, Gnutella2 y eD2k/Kad: el
-          punto 19 de este mismo backlog ya cubrió IPv6 en su momento,
-          pero el formato binario de direcciones de esos tres protocolos
-          sigue limitando el soporte real — pendiente de revisar caso
-          por caso qué parte concreta del código de cada backend impone
-          esa limitación.
-    34.5. Planificador de ancho de banda por franja horaria (limitar la
-          velocidad de subida/bajada según la hora del día), sobre los
-          límites de velocidad ya existentes del punto 2.
-    34.6. Control remoto / API web para gestionar descargas sin abrir la
-          GUI de escritorio.
-    34.7. Mejoras de accesibilidad en la GUI: soporte de lector de
-          pantalla y navegación completa por teclado.
+    34.1. ✅ Mecanismo de auto-actualización real — completo (ver "Punto
+          34.1 del backlog: mecanismo de auto-actualización real" en
+          "Estado actual" para el detalle completo y la validación):
+          descarga y sustitución automática para AppImage/instalador de
+          Windows/macOS; los `.deb`/`.rpm`/`.flatpak` (gestionados por
+          el sistema, no auto-actualizables de forma segura) siguen
+          cayendo al aviso con enlace de siempre.
+    34.2. ✅ Suite de tests automatizados — completo (ver "Punto 34.2 del
+          backlog: suite de tests automatizados" en "Estado actual"
+          para el detalle completo y la validación): 157 tests con
+          pytest cubriendo la lógica pura y determinista de las cinco
+          redes (parsers, codecs binarios, hashes MD4/Tiger/TTH/AICH,
+          config, i18n); la validación de protocolo completo contra
+          infraestructura real de cada red sigue siendo manual, a
+          propósito.
+    34.3. ✅ Cifrado de protocolo BitTorrent (MSE/PE) y soporte de µTP —
+          completo (ver "Punto 34.3 del backlog: cifrado de protocolo
+          BitTorrent (MSE/PE) y soporte de µTP" en "Estado actual" para
+          el detalle completo y la validación): `libtorrent` ya los
+          implementa, así que el trabajo fue fijar explícitamente la
+          política (cifrado "enabled", no forzado; µTP en ambos
+          sentidos) en vez de depender de valores por defecto
+          implícitos, y exponer contadores en vivo
+          (`connected_peers`/`encrypted_peers`/`utp_connections`) en
+          `get_stats()` y en la pestaña Red de la GUI. Validado con dos
+          tests nuevos y contra un torrent real con más de 150 peers
+          conectados simultáneamente.
+    34.4. ✅ Auditoría de IPv6 en Soulseek/Gnutella2/eD2k-Kad — completo
+          (ver "Punto 34.4 del backlog: auditoría de IPv6 en
+          Soulseek/Gnutella2/eD2k-Kad" en "Estado actual" para el
+          detalle completo): revisado caso por caso el código de los
+          tres backends, confirmando que el punto 19 ya había resuelto
+          de facto todo lo que el protocolo real permite (cada backend
+          tiene un único punto de lectura/escritura de direcciones, ya
+          documentado como límite de protocolo salvo `_read_wire_ip()`
+          de eD2k, al que se le añadió la nota que le faltaba). No
+          queda ninguna mejora real de IPv6 pendiente en estas tres
+          redes.
+    34.5. ✅ Planificador de ancho de banda por franja horaria — completo
+          (ver "Punto 34.5 del backlog: planificador de ancho de banda
+          por franja horaria" en "Estado actual" para el detalle
+          completo de la implementación y su validación).
+    34.6. ✅ Control remoto / API web — completo (ver "Punto 34.6 del
+          backlog: control remoto / API web" en "Estado actual" para
+          el detalle completo de la implementación y su validación).
+    34.7. ✅ Mejoras de accesibilidad en la GUI: soporte de lector de
+          pantalla y navegación completa por teclado — completo (ver
+          "Punto 34.7 del backlog: mejoras de accesibilidad en la GUI"
+          en "Estado actual" para el detalle completo de la
+          implementación y su validación).
+
+    Con 34.7 se completan todos los sub-puntos de la lista (34.1-34.7):
+    el punto 34 queda cerrado.
+
+### Arreglo: el aviso de reinicio al cambiar de idioma salía en el idioma antiguo
+
+Bug real reportado por el usuario: al cambiar el idioma en Preferencias
+(o desde el menú rápido), el aviso "el cambio de idioma se aplicará al
+reiniciar la aplicación" se mostraba en el idioma que se acababa de
+dejar de usar, no en el que el usuario acababa de elegir. Causa: `t()`
+lee siempre `gui.i18n._current_language`, que no cambia hasta el
+próximo arranque (el cambio de idioma requiere reiniciar porque los
+widgets ya construidos no se retraducen en caliente) — así que el
+propio aviso de "hace falta reiniciar" quedaba escrito en el idioma
+viejo.
+
+Arreglo: `gui/i18n.py` añade `t_in(language, key, **kwargs)`, idéntica
+a `t()` pero para un idioma concreto en vez del activo (`t()` pasa a
+ser un delegado de `t_in(_current_language, key, **kwargs)`, sin
+cambio de comportamiento). `gui/main_window.py`
+(`_on_language_selected`) y `gui/widgets/settings_dialog.py`
+(`_on_save`) usan `t_in(nuevo_idioma, ...)` para el título y el propio
+aviso de reinicio en vez de `t()`, mostrándolo ya en el idioma recién
+elegido sin tocar `_current_language` (que sigue igual hasta el
+reinicio real, así el resto de la sesión en curso no queda con textos
+mezclados de dos idiomas). Validado con un script directo confirmando
+que `t_in()` devuelve el texto correcto en varios idiomas sin alterar
+el idioma activo global, y con la suite completa de pytest sin
+regresiones (192 passed).
+
+### Arreglo: conectar a Soulseek/DC++/Gnutella2/eMule se congelaba la GUI (había que forzar el cierre)
+
+Bug real reportado por el usuario: al conectar cualquier red salvo
+BitTorrent, la GUI se quedaba congelada sin remedio (había que matar
+el proceso a la fuerza); una búsqueda de Soulseek por CLI (`python
+main.py search ... --network soulseek`) también se quedaba colgada
+sin mostrar nada, ignorando `--timeout`. Investigado en profundidad
+porque el síntoma no encajaba con ningún timeout de red conocido de
+los backends (todos tienen `asyncio.wait_for` con límites razonables).
+
+Causa raíz, en cadena, las tres agravándose entre sí:
+
+1. Las cuatro redes que sirven ficheros (Soulseek, DC++, Gnutella2,
+   eMule) llaman a `SharedLibrary.rescan()` (`core/sharing.py`) de
+   forma **síncrona** dentro de su propio `connect()`, y `rescan()`
+   hashea (SHA1 + eD2k) el contenido **entero** de todas las carpetas
+   compartidas configuradas en Preferencias. Al ser una llamada
+   síncrona sin `await`, bloqueaba el único hilo del event loop de
+   asyncio -y con él, vía `qasync`, la GUI Qt entera- durante todo ese
+   tiempo. BitTorrent no lo sufre porque no usa `SharedLibrary` (ya
+   siembra de fábrica vía su propia sesión de libtorrent).
+2. Ese hasheo no tenía ninguna caché: `rescan()` volvía a leer y
+   hashear cada fichero compartido **desde cero en cada connect()**,
+   por severo que fuera el coste, sin importar si ya se había
+   escaneado antes en la misma sesión.
+3. El eD2k usa MD4 (`core/md4.py`), implementado a mano en Python puro
+   porque el OpenSSL de sistemas modernos no lo trae habilitado
+   (`hashlib.new("md4")` no está disponible). Su `update()` tenía un
+   fallo de rendimiento cuadrático: `self._buffer = self._buffer[64:]`
+   dentro del bucle que procesa bloques de 64 bytes reasignaba (copiaba
+   entero) el búfer restante en cada uno de esos bloques, así que
+   hashear un `data` de tamaño N costaba O(N²) en vez de O(N). Con
+   chunks de 1 MB (los que lee `_hash_file()`), esto ya costaba ~1,5 s
+   por MB antes siquiera de sumar el coste de las demás carpetas —
+   confirmado con un benchmark (`core/md4.py` antes del arreglo: 1 MB
+   → 1,53 s, 2 MB → 5,13 s, 4 MB → 17,67 s, 8 MB → 66,76 s, claramente
+   cuadrático). Con la carpeta compartida real del usuario (93 GB,
+   5.404 ficheros entre `amule/`, `Batocera/`, `Juegos/`, `P2P-Total/`
+   y `NicotinePlus/`), esto suponía muchas horas por *cada* conexión a
+   *cada* red — indistinguible en la práctica de un cuelgue eterno.
+
+Arreglo, con cuatro cambios independientes que se refuerzan entre sí:
+
+1. **No bloquear el event loop**: las cuatro llamadas a
+   `self._shared_library.rescan(...)` en `backends/soulseek_backend.py`,
+   `backends/dcpp_backend.py`, `backends/g2_backend.py` y
+   `backends/emule_backend.py` pasan a `await
+   asyncio.to_thread(self._shared_library.rescan, ...)`, moviendo el
+   escaneo/hasheo a un hilo aparte para que la GUI (y el resto de
+   tareas asyncio) sigan respondiendo mientras dura.
+2. **Arreglado el fallo cuadrático de `core/md4.py`**: `MD4.update()`
+   ahora solo guarda en `self._buffer` como mucho 63 bytes de resto
+   entre llamadas y avanza con un índice sobre `data` en vez de
+   reasignar el búfer entero en cada bloque de 64 bytes — pasa de
+   O(N²) a O(N). Confirmado con el mismo benchmark tras el arreglo:
+   throughput constante (~1,3 MB/s) desde 1 MB hasta 200 MB, en vez de
+   degradarse. Sigue siendo lento por ser Python puro (no hay MD4 en
+   OpenSSL para delegar), pero ya no exponencialmente peor cuanto más
+   grande es el fichero.
+3. **Caché de hashes por (tamaño, mtime) en `SharedLibrary.rescan()`**:
+   ahora guarda en memoria, por ruta absoluta, el tamaño/fecha de
+   modificación junto con los hashes ya calculados, y solo vuelve a
+   hashear un fichero si alguno de los dos ha cambiado desde el último
+   escaneo — reconectar (o conectar otra red sobre la misma
+   `SharedLibrary`) dentro de la misma sesión ya no repite el trabajo
+   entero.
+4. **Cálculo de hash bajo demanda según lo que necesita cada red**:
+   `SharedLibrary.rescan()` y `_hash_file()` ahora aceptan
+   `need_sha1`/`need_ed2k` por separado (por defecto `True` ambos).
+   Soulseek y DC++ (en esta implementación) buscan un fichero
+   compartido por ruta/nombre, no por hash, así que llaman a
+   `rescan(need_sha1=False, need_ed2k=False)` y no pagan ningún coste
+   de hasheo (solo el `os.walk()`+`stat()` de indexar rutas).
+   Gnutella2 solo necesita el SHA1 para anunciar/responder búsquedas
+   `urn:sha1:`, así que llama a `rescan(need_ed2k=False)` y se ahorra
+   con diferencia el hash más caro (eD2k/MD4); el SHA1 es barato
+   porque usa `hashlib` en C a velocidad de disco. eMule sigue
+   pidiendo ambos (los valores por defecto) porque de verdad necesita
+   el eD2k. La caché guarda qué hashes tiene cada fichero por
+   separado, así que si una red solo pidió SHA1 y más tarde otra pide
+   también eD2k sobre la misma `SharedLibrary` compartida, solo
+   calcula el que falta, sin repetir el SHA1 ya cacheado.
+   `gui/connection_manager.py` pasa además a compartir una única
+   `SharedLibrary` entre las cuatro redes (antes creaba una nueva por
+   cada `connect_network()`, multiplicando por cuatro el escaneo si se
+   auto-conectaban varias redes a la vez).
+
+Con estos cuatro cambios, sobre la carpeta compartida real del
+usuario: escanear sin hashes (Soulseek/DC++) pasó de nunca terminar a
+0,4 s; escanear solo con SHA1 (Gnutella2) sobre la subcarpeta más
+grande (`amule/`, 48 GB) pasó de no terminar en más de 3 minutos a
+185,9 s. eMule (necesita eD2k de verdad) sigue siendo lento con
+carpetas compartidas muy grandes por la propia naturaleza de una
+implementación de MD4 en Python puro, pero ya no se congela la GUI
+mientras tanto (corre en un hilo aparte) y cada reconexión posterior
+reutiliza la caché.
+
+Validado: reproducido el cuelgue original (`python main.py search
+"test" --network soulseek --timeout 15` colgado más de 60 s sin
+ninguna salida, ni siquiera con `python -u`), confirmada la causa con
+benchmarks directos de `core/md4.py` y `SharedLibrary.rescan()`
+aislados, y reproducida la búsqueda de nuevo tras el arreglo:
+conecta y devuelve resultados reales de Soulseek en 18 s. Nuevo
+fichero `tests/test_sharing.py` (5 tests: escaneo sin hashes,
+SHA1-only, reutilización de caché sin cambios, rehash al modificar un
+fichero, y completar un hash que faltaba reutilizando el ya cacheado)
+más la suite completa de pytest, sin regresiones (197 passed).
+
+### Arreglo: hasheo de eMule en segundo plano de verdad, con caché persistente en SQLite
+
+El arreglo anterior movía `SharedLibrary.rescan()` a un hilo aparte con
+`await asyncio.to_thread(...)`, así que el event loop/GUI ya no se
+congelaba — pero seguía siendo un `await`: `connect()` de esa red en
+concreto no volvía hasta que el escaneo entero terminaba, y la caché de
+hashes vivía solo en memoria (se perdía en cada reinicio de la app).
+Para eMule, que sí necesita el eD2k de cada fichero (con diferencia el
+hash más lento, MD4 puro Python), eso significaba que conectar contra
+la biblioteca compartida real del usuario (93 GB, 5.404 ficheros)
+podía tardar del orden de 20 horas antes de que la red quedase
+operativa — y, tras cerrar la app, había que repetirlo todo desde
+cero la próxima vez. El usuario pidió explícitamente arreglar esto:
+"el hash se tiene que hacer en segundo plano sin interferir en la GUI
+y guardando una base de datos los resultados de los hash para sólo
+volver a hacer hash a los archivos modificados o nuevos. Cualquier
+proceso tiene que ser en hilos independientes que no afecten al GUI,
+búsquedas, hash, verificar descargas, etc."
+
+Cambios:
+
+1. **Caché de hashes persistida en SQLite** (`core/database.py`,
+   tabla nueva `shared_hash_cache`, mismo patrón que `downloads.db` ya
+   usa para descargas/búsquedas/estadísticas): `path` como clave,
+   `size`/`mtime_ns`/`sha1`/`ed2k`/`ed2k_parts`/`has_sha1`/`has_ed2k`.
+   `load_shared_hash_cache()` la carga entera al construir una
+   `SharedLibrary`; `save_shared_hash_cache_entries()` guarda en lote
+   (no fichero a fichero, para no pagar una transacción SQLite por
+   cada uno); `prune_shared_hash_cache()` borra al final de un escaneo
+   completo las entradas de ficheros que ya no están (se borraron o se
+   movieron fuera de las carpetas compartidas). `SharedLibrary.rescan()`
+   ahora persiste lo que va calculando cada `_PUBLISH_EVERY = 100`
+   ficheros (no solo al terminar del todo), para no perder el progreso
+   si la app se cierra a mitad de un escaneo largo.
+2. **Escaneo realmente no bloqueante** (`SharedLibrary.ensure_scanning()`
+   + `_background_scan()`): los cuatro backends que comparten
+   (Soulseek, DC++, Gnutella2, eMule) ya no hacen `await
+   asyncio.to_thread(self._shared_library.rescan, ...)` dentro de
+   `connect()` — llaman a `ensure_scanning(need_sha1=..., need_ed2k=...)`,
+   que lanza el escaneo y vuelve al instante, sin esperar nada.
+   `connect()` termina de inmediato y la red queda operativa (login,
+   búsquedas, servir lo ya indexado) aunque el escaneo siga en marcha
+   de fondo. Si ya hay un escaneo en curso y llega una petición con
+   hashes adicionales (p.ej. Gnutella2 conecta primero pidiendo solo
+   SHA1 y poco después eMule, que además necesita eD2k, sobre la misma
+   `SharedLibrary` compartida entre redes vía
+   `gui/connection_manager.py`), `ensure_scanning()` amplía lo que se
+   pide sin lanzar un segundo escaneo en paralelo ni reiniciar desde
+   cero lo ya hasheado. Dentro de `rescan()`, `self._files` (la lista
+   que consultan `list_files()`/`find_by_*`) también se publica cada
+   `_PUBLISH_EVERY` ficheros en vez de solo al final, así que búsquedas
+   y peticiones de descarga ven resultados según van apareciendo, no
+   solo cuando el escaneo entero ha terminado. Efecto colateral en
+   `backends/g2_backend.py`: antes decidía si arrancar el servidor de
+   subida (`self._share_server`) mirando `shared_library.enabled`
+   (`bool(self._files)`, que ya no está listo al momento de conectar);
+   ahora mira `shared_library.roots` (hay carpetas compartidas
+   configuradas, aunque el índice todavía se esté rellenando) para no
+   dejar de escuchar peticiones mientras dura el escaneo.
+3. **Hilo daemon en vez del `ThreadPoolExecutor` por defecto de
+   `asyncio.to_thread`** (`core.sharing._run_in_daemon_thread`):
+   validando en real contra la red eD2k/Kad de verdad (ver más abajo)
+   se detectó que, aun con el escaneo ya no bloqueando `connect()`, el
+   propio proceso de Python se quedaba colgado sin terminar — el
+   `ThreadPoolExecutor` que usa `asyncio.to_thread` por defecto crea
+   hilos que NO son `daemon`, así que el intérprete los espera al
+   salir (vía `atexit`) aunque el script/la app ya hayan terminado su
+   trabajo, hasta que el escaneo en curso (que puede tardar horas)
+   acabe por su cuenta. `_run_in_daemon_thread()` hace lo mismo que
+   `asyncio.to_thread()` pero lanzando el hilo explícitamente con
+   `daemon=True`, así que la app/el proceso pueden cerrarse de
+   inmediato aunque el escaneo se corte a medias — no se pierde nada
+   importante gracias al punto 1 (persistencia incremental cada 100
+   ficheros).
+4. **Verificación de descargas de eMule también en un hilo aparte**
+   (`backends/emule_backend.py`, `_verify_download`): al completar una
+   descarga, se recalculaba el MD4 (eD2k) del fichero entero de forma
+   síncrona dentro de la propia corrutina de descarga — para un
+   fichero grande, esto bloqueaba el event loop/GUI durante toda la
+   verificación, el mismo tipo de fallo que motivó todo este arreglo,
+   solo que en "verificar descargas" en vez de en "conectar". Ahora se
+   llama envuelta en `await asyncio.to_thread(...)`. Se auditó el
+   resto de hasheo del proyecto (`core/aich.py`, los `md5`/`md4` de
+   logins e IDs de cliente) y no se encontró ningún otro caso: todos
+   operan sobre datos pequeños (bloques de 180 KiB o menos) o ya
+   estaban en un hilo aparte (`_sha1_of_file` en G2, `tth_of_file` en
+   DC++).
+
+Validado:
+- Suite de tests (`tests/test_sharing.py`, ampliada a 9 tests: los 5
+  anteriores más `test_hash_cache_persists_across_instances`
+  -reconstruye una `SharedLibrary` nueva sobre la misma base de datos
+  y comprueba que no recalcula ningún hash, forzando un `AssertionError`
+  si `_hash_file` llega a invocarse-, `test_ensure_scanning_does_not_block_caller`,
+  `test_ensure_scanning_does_not_launch_duplicate_scan` y
+  `test_ensure_scanning_merges_requirements_from_several_networks`).
+  Suite completa sin regresiones (201 passed).
+- **Conexión real a eMule** (petición explícita del usuario: "prueba a
+  conectar eMule también"): `python main.py search "test" --network
+  emule --timeout 20` descubrió un servidor eD2k automáticamente
+  (`85.17.116.222:6082`), completó el bootstrap de Kad (192 contactos
+  reales) y devolvió cientos de resultados reales de la red eD2k/Kad,
+  todo con la biblioteca compartida real del usuario (93 GB)
+  escaneándose de fondo — el proceso completo tardó 29,5 s y terminó
+  limpio (código de salida 0) en vez de quedarse colgado.
+- **Persistencia validada con ficheros reales**: contra la carpeta
+  compartida real y pequeña del usuario (`~/Descargas/P2P-Total`, 7,3
+  MB, 2 ficheros), el primer escaneo (SHA1+eD2k) tardó 5,6 s; una
+  segunda `SharedLibrary` sobre la misma carpeta -simulando un
+  reinicio de la app- tardó 0,0012 s en dar el mismo resultado,
+  reutilizando por completo la caché ya guardada en SQLite.
+- Se detectó y arregló durante esta misma validación en real el bug
+  del `ThreadPoolExecutor` no-daemon descrito en el punto 3 (el
+  proceso de la CLI se quedaba colgado a pesar de que la búsqueda ya
+  había terminado y mostrado resultados; confirmado con `ps aux`
+  mostrando el proceso seguía al 100% CPU, y con `timeout 90` teniendo
+  que forzar su cierre con código de salida 124 antes del arreglo).
+- Añadido `tests/conftest.py` (fixture `autouse` `_isolated_db`): se
+  detectó que, al no existir antes ningún test que tocase
+  `core/database.py`, ejecutar la nueva suite escribía sin querer una
+  fila de prueba en la base de datos real de producción del usuario
+  (`~/.local/share/p2p-manager/downloads.db`) — ya limpiada. Ahora
+  todos los tests usan una base de datos SQLite aislada en un
+  directorio temporal propio (con `tmp_path_factory`, no `tmp_path`,
+  precisamente para no anidarla dentro de la carpeta que un test use
+  como carpeta compartida a escanear).

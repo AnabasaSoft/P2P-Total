@@ -638,7 +638,18 @@ def _read_wire_ip(data: bytes, offset: int) -> str:
     significativo es el PRIMER octeto de la IP (así se ve en el propio
     ID de cliente: HighID = IP real como uint32 LE). Por eso, leyendo
     los 4 bytes tal cual aparecen en el cable y uniéndolos con puntos ya
-    se obtiene la dirección correcta, sin invertir nada."""
+    se obtiene la dirección correcta, sin invertir nada.
+
+    Es el único punto de lectura de direcciones del backend (lo usan
+    `parse_nodes_dat`, la lista de contactos Kad de KADEMLIA2_RES/
+    KADEMLIA2_BOOTSTRAP_RES, la lista de servidores que el propio
+    servidor eD2k va "soplando" en caliente, y OP_CALLBACKREQUESTED),
+    y en los cuatro bytes fijos: igual que `client_id`
+    (`_build_hello_payload`), TAG_SOURCEIP en las respuestas de fuentes
+    Kad y el payload de KADEMLIA_FIREWALLED_RES, es un límite real del
+    protocolo eD2k/Kad -ningún cliente real (eMule, aMule) tiene jamás
+    una variante de campo para IPv6-, no una carencia de esta
+    implementación."""
     return ".".join(str(b) for b in data[offset:offset + 4])
 
 
@@ -1144,7 +1155,20 @@ class EMuleBackend(NetworkBackend):
         inicia sesión en ningún servidor eD2k todavía: eso lo hacen
         connect_to_server()/connect_auto(), igual que en DC++/G2."""
         if self._shared_library is not None:
-            self._shared_library.rescan()
+            # need_sha1=True, need_ed2k=True (los valores por defecto,
+            # ver SharedLibrary.rescan): a diferencia de Soulseek/DC++,
+            # eMule sí necesita el hash eD2k de cada fichero para
+            # identificarlo ante otros clientes y el servidor (el SHA1 no
+            # le hace falta, pero es barato calcularlo en la misma
+            # pasada de lectura). En segundo plano sin esperar (ver
+            # SharedLibrary.ensure_scanning): eD2k es, con diferencia, el
+            # hash más lento de calcular (MD4 puro Python) -para una
+            # biblioteca compartida grande, el primer hasheo completo
+            # puede tardar horas- así que connect() no se queda esperando
+            # a que termine; el servidor eD2k/Kad queda operativo de
+            # inmediato y el índice de ficheros compartidos se va
+            # completando poco a poco mientras tanto.
+            self._shared_library.ensure_scanning()
         if self._tcp_server is None:
             self._tcp_server = await asyncio.start_server(self._handle_incoming_peer, "0.0.0.0", self._listen_port)
         if self._udp_transport is None:
@@ -2156,7 +2180,13 @@ class EMuleBackend(NetworkBackend):
 
         download.speed_bps = 0.0
         self._flush_credits()
-        bad_parts = _verify_download(out_path, file_hash, hashset, download.size_bytes)
+        # En un hilo aparte: _verify_download recalcula el MD4 (eD2k) del
+        # fichero entero recién descargado, y como el resto del hasheo
+        # eD2k de este proyecto usa la implementación en Python puro de
+        # core/md4.py (obligada porque el MD4 de OpenSSL no está
+        # disponible), llamarla directamente aquí bloquearía el event
+        # loop/GUI durante toda la verificación en descargas grandes.
+        bad_parts = await asyncio.to_thread(_verify_download, out_path, file_hash, hashset, download.size_bytes)
         if not bad_parts:
             download.state = DownloadState.COMPLETED
         else:

@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QDialog, QHBoxLayout, QHeaderView,
     QLabel, QListWidget, QMenu, QMessageBox, QPushButton, QSplitter,
-    QTableView, QVBoxLayout, QWidget,
+    QVBoxLayout, QWidget,
 )
 
 from core.config import Category, load_config
@@ -19,6 +19,7 @@ from core.download_manager import DownloadManager
 from core.models import Network, SearchResult
 from gui.i18n import t
 from gui.models_qt import SearchResultsModel, SearchResultsSortProxy
+from gui.widgets.accessible_table import AccessibleTableView
 
 
 class BrowseUserDialog(QDialog):
@@ -46,7 +47,8 @@ class BrowseUserDialog(QDialog):
         self._model = SearchResultsModel(self)
         self._proxy = SearchResultsSortProxy(self)
         self._proxy.setSourceModel(self._model)
-        self._table = QTableView()
+        self._table = AccessibleTableView()
+        self._table.setAccessibleName(self.windowTitle())
         self._table.setModel(self._proxy)
         self._table.setSortingEnabled(True)
         self._table.setAlternatingRowColors(True)

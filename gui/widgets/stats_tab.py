@@ -54,6 +54,7 @@ class StatsTab(QWidget):
 
         layout.addWidget(QLabel(t("stats_totals_title")))
         self._totals_table = QTableWidget(len(Network), 5)
+        self._totals_table.setAccessibleName(t("stats_totals_title"))
         self._totals_table.setHorizontalHeaderLabels([
             t("col_network"), t("col_stats_uploaded"), t("col_stats_downloaded"),
             t("col_stats_ratio"), t("col_stats_connected_time"),
@@ -74,6 +75,7 @@ class StatsTab(QWidget):
 
         layout.addWidget(QLabel(t("stats_history_title")))
         self._history_table = QTableWidget(0, 4)
+        self._history_table.setAccessibleName(t("stats_history_title"))
         self._history_table.setHorizontalHeaderLabels([
             t("col_stats_date"), t("col_network"), t("col_stats_downloaded"), t("col_stats_uploaded"),
         ])

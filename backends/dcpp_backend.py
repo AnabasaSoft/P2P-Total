@@ -311,7 +311,16 @@ class DCPPBackend(NetworkBackend):
 
     async def connect(self) -> None:
         if self._shared_library is not None:
-            self._shared_library.rescan()
+            # need_sha1=False, need_ed2k=False: DC++ (en esta
+            # implementación) busca un fichero compartido por ruta/nombre
+            # (find_by_native_path), no por hash, así que no hace falta
+            # pagar el coste de hashear todo el contenido (ver
+            # SharedLibrary.rescan). En segundo plano sin esperar (ver
+            # SharedLibrary.ensure_scanning): aunque ya no hashea, sigue
+            # siendo un os.walk() síncrono sobre la carpeta compartida, y
+            # así connect() no se queda esperando ni un instante a que
+            # termine de indexarla.
+            self._shared_library.ensure_scanning(need_sha1=False, need_ed2k=False)
         # Escucha en IPv4 y en IPv6 a la vez: a diferencia de G2/eD2k/
         # Soulseek (protocolos binarios con un campo de dirección de solo
         # 4 bytes que no puede representar una IPv6), NMDC es texto plano

@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
-    QTableView, QTabWidget, QVBoxLayout, QWidget,
+    QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core.config import Category, load_config
@@ -21,6 +21,7 @@ from core.saved_search_manager import SavedSearchManager
 from gui.connection_manager import ConnectionManager, STATUS_CONNECTED
 from gui.i18n import t
 from gui.models_qt import NETWORK_LABEL_KEYS, SearchResultsModel, SearchResultsSortProxy
+from gui.widgets.accessible_table import AccessibleTableView
 from gui.widgets.browse_user_dialog import BrowseUserDialog
 
 _TAB_TITLE_MAX_LEN = 20
@@ -89,7 +90,8 @@ class SearchResultsPanel(QWidget):
         self._model = SearchResultsModel(self)
         self._proxy = SearchResultsSortProxy(self)
         self._proxy.setSourceModel(self._model)
-        self._table = QTableView()
+        self._table = AccessibleTableView()
+        self._table.setAccessibleName(t("acc_search_results_table"))
         self._table.setModel(self._proxy)
         self._table.setSortingEnabled(True)
         self._table.setAlternatingRowColors(True)
@@ -307,6 +309,7 @@ class SearchTab(QWidget):
         search_row = QHBoxLayout()
         self._query_edit = QLineEdit()
         self._query_edit.setPlaceholderText(t("search_placeholder"))
+        self._query_edit.setAccessibleName(t("acc_search_query"))
         self._query_edit.returnPressed.connect(self._on_search_clicked)
         search_row.addWidget(self._query_edit, stretch=1)
         search_row.addWidget(QLabel(t("lbl_file_type")))

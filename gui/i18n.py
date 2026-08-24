@@ -83,6 +83,14 @@ TRANSLATIONS = {
 
         # --- Búsqueda ---
         "search_placeholder": "Buscar…",
+        "acc_search_query": "Buscar",
+        "acc_downloads_table": "Tabla de descargas",
+        "acc_search_results_table": "Tabla de resultados de búsqueda",
+        "acc_network_table": "Tabla de estado de redes",
+        "acc_chat_message": "Mensaje de chat",
+        "acc_chat_users": "Usuarios de la sala",
+        "acc_chat_log": "Historial de la conversación",
+        "acc_hub_filter": "Filtrar hubs",
         "btn_search": "Buscar",
         "lbl_networks_filter": "Buscar en:",
         "lbl_file_type": "Tipo:",
@@ -215,6 +223,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "Se ha añadido «{filename}» a las descargas.",
         "notify_watch_folder_error_body": "No se ha podido añadir «{filename}»: {error}",
         "chk_auto_verify": "Verificar automáticamente el contenido al completar una descarga",
+        "chk_auto_connect": "Conectar automáticamente al arrancar",
         "auto_verify_tooltip": (
             "Al terminar una descarga, comprueba que los datos ya en disco "
             "cuadran con su hash de referencia (solo en las redes que lo "
@@ -268,6 +277,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Control remoto",
         "lbl_download_dir": "Carpeta de descargas:",
         "lbl_shared_folder": "Carpetas compartidas:",
         "btn_add_folder": "Añadir carpeta…",
@@ -282,6 +292,11 @@ TRANSLATIONS = {
         "theme_light": "Claro",
         "lbl_global_download_limit": "Límite de bajada global:",
         "lbl_global_upload_limit": "Límite de subida global:",
+        "chk_schedule_enabled": "Aplicar límites alternativos en una franja horaria",
+        "lbl_schedule_time_range": "Franja horaria:",
+        "lbl_schedule_download_limit": "Límite de bajada en la franja:",
+        "lbl_schedule_upload_limit": "Límite de subida en la franja:",
+        "schedule_tooltip": "Durante esta franja horaria se aplican los límites de arriba en vez de los límites globales normales. Si la hora de fin es anterior a la de inicio, la franja cruza la medianoche (por ejemplo, de 23:00 a 07:00).",
         "spin_unlimited_speed": "Ilimitado",
         "lbl_auto_retry_attempts": "Reintentos automáticos si se queda sin fuentes:",
         "lbl_auto_retry_delay": "Espera entre reintentos:",
@@ -330,6 +345,21 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k y BitTorrent. El tráfico UDP (Kad, hub "
             "de Gnutella2) sigue yendo directo, sin proxear."
         ),
+        "lbl_remote_enabled": "Activar control remoto (API web):",
+        "lbl_remote_host": "Dirección de escucha:",
+        "lbl_remote_port": "Puerto:",
+        "lbl_remote_token": "Token de acceso:",
+        "btn_remote_generate_token": "Generar…",
+        "lbl_remote_note": (
+            "Permite gestionar las descargas (pausar, reanudar, cancelar, borrar, buscar "
+            "y añadir nuevas) desde un navegador, sin abrir esta ventana — pensado para "
+            "usarlo con la aplicación minimizada a la bandeja. Hace falta un token propio "
+            "(botón «Generar…») que hay que introducir en la página web la primera vez; "
+            "sin él, la API rechaza cualquier petición. Por seguridad, la dirección de "
+            "escucha por defecto es solo 127.0.0.1 (este mismo equipo); cambiarla a "
+            "0.0.0.0 expone el control remoto a toda la red local."
+        ),
+        "msg_remote_token_required": "Para activar el control remoto hace falta generar antes un token de acceso.",
         "lbl_max_results": "Nº máximo de resultados:",
         "lbl_search_timeout": "Tiempo de búsqueda:",
         "spin_unlimited": "Ilimitado (solo limitado por el tiempo)",
@@ -356,6 +386,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Hay una nueva versión de P2P Total disponible: {version}.\n\n¿Quieres ir a la página de descarga en GitHub?",
         "update_dialog_download": "Descargar",
         "update_dialog_cancel": "Cancelar",
+        "update_dialog_text_auto": "Hay una nueva versión de P2P Total disponible: {version}.\n\n¿Quieres actualizarla ahora automáticamente?",
+        "update_dialog_update_now": "Actualizar ahora",
+        "update_downloading": "Descargando actualización…",
+        "update_download_failed": "No se ha podido descargar la actualización. Prueba a descargarla a mano desde la página de GitHub.",
+        "update_apply_failed": "Se ha descargado la actualización pero no se ha podido instalar. Prueba a instalarla a mano desde el fichero descargado.",
 
         # --- Barra de estado ---
         "statusbar_ready": "Listo",
@@ -382,6 +417,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nodos DHT",
         "stat_known_peers": "Nodos conocidos",
         "stat_active_transfers": "Descargas activas",
+        "stat_connected_peers": "Peers conectados",
+        "stat_encrypted_peers": "Peers cifrados",
+        "stat_utp_connections": "Conexiones µTP",
         "stat_shared_files": "Ficheros compartidos",
         "stat_active_uploads": "Subidas activas",
         "stat_id_status": "Estado ID",
@@ -459,6 +497,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alerts ({n})",
 
         "search_placeholder": "Search…",
+        "acc_search_query": "Search",
+        "acc_downloads_table": "Downloads table",
+        "acc_search_results_table": "Search results table",
+        "acc_network_table": "Network status table",
+        "acc_chat_message": "Chat message",
+        "acc_chat_users": "Room users",
+        "acc_chat_log": "Chat log",
+        "acc_hub_filter": "Filter hubs",
         "btn_search": "Search",
         "lbl_networks_filter": "Search in:",
         "lbl_file_type": "Type:",
@@ -587,6 +633,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» has been added to the downloads.",
         "notify_watch_folder_error_body": "Could not add «{filename}»: {error}",
         "chk_auto_verify": "Automatically verify content when a download completes",
+        "chk_auto_connect": "Connect automatically on startup",
         "auto_verify_tooltip": (
             "When a download finishes, checks that the data already on disk "
             "matches its reference hash (only on networks that support it; "
@@ -638,6 +685,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Remote control",
         "lbl_download_dir": "Download folder:",
         "lbl_shared_folder": "Shared folders:",
         "btn_add_folder": "Add folder…",
@@ -652,6 +700,11 @@ TRANSLATIONS = {
         "theme_light": "Light",
         "lbl_global_download_limit": "Global download limit:",
         "lbl_global_upload_limit": "Global upload limit:",
+        "chk_schedule_enabled": "Apply alternative limits during a time range",
+        "lbl_schedule_time_range": "Time range:",
+        "lbl_schedule_download_limit": "Download limit during the range:",
+        "lbl_schedule_upload_limit": "Upload limit during the range:",
+        "schedule_tooltip": "During this time range, the limits above apply instead of the normal global limits. If the end time is earlier than the start time, the range crosses midnight (e.g. 23:00 to 07:00).",
         "spin_unlimited_speed": "Unlimited",
         "lbl_auto_retry_attempts": "Automatic retries when out of sources:",
         "lbl_auto_retry_delay": "Delay between retries:",
@@ -700,6 +753,21 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k and BitTorrent. UDP traffic (Kad, "
             "Gnutella2 hub) still goes direct, unproxied."
         ),
+        "lbl_remote_enabled": "Enable remote control (web API):",
+        "lbl_remote_host": "Listen address:",
+        "lbl_remote_port": "Port:",
+        "lbl_remote_token": "Access token:",
+        "btn_remote_generate_token": "Generate…",
+        "lbl_remote_note": (
+            "Manage downloads (pause, resume, cancel, delete, search and add new ones) "
+            "from a browser, without opening this window — meant to be used with the "
+            "application minimized to the tray. Needs its own token (\"Generate…\" "
+            "button) that must be entered on the web page the first time; without it, the "
+            "API rejects every request. For security, the default listen address is only "
+            "127.0.0.1 (this same machine); changing it to 0.0.0.0 exposes remote control "
+            "to the whole local network."
+        ),
+        "msg_remote_token_required": "You need to generate an access token before enabling remote control.",
         "lbl_max_results": "Max. search results:",
         "lbl_search_timeout": "Search timeout:",
         "spin_unlimited": "Unlimited (only limited by time)",
@@ -725,6 +793,11 @@ TRANSLATIONS = {
         "update_dialog_text": "A new version of P2P Total is available: {version}.\n\nDo you want to go to the download page on GitHub?",
         "update_dialog_download": "Download",
         "update_dialog_cancel": "Cancel",
+        "update_dialog_text_auto": "A new version of P2P Total is available: {version}.\n\nDo you want to update it now automatically?",
+        "update_dialog_update_now": "Update now",
+        "update_downloading": "Downloading update…",
+        "update_download_failed": "Could not download the update. Try downloading it manually from the GitHub page.",
+        "update_apply_failed": "The update was downloaded but could not be installed. Try installing it manually from the downloaded file.",
 
         "statusbar_ready": "Ready",
         "statusbar_connected_count": "{n}/{total} networks connected",
@@ -749,6 +822,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT nodes",
         "stat_known_peers": "Known nodes",
         "stat_active_transfers": "Active transfers",
+        "stat_connected_peers": "Connected peers",
+        "stat_encrypted_peers": "Encrypted peers",
+        "stat_utp_connections": "µTP connections",
         "stat_shared_files": "Shared files",
         "stat_active_uploads": "Active uploads",
         "stat_id_status": "ID status",
@@ -826,6 +902,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alertak ({n})",
 
         "search_placeholder": "Bilatu…",
+        "acc_search_query": "Bilatu",
+        "acc_downloads_table": "Deskarga-taula",
+        "acc_search_results_table": "Bilaketa-emaitzen taula",
+        "acc_network_table": "Sareen egoera-taula",
+        "acc_chat_message": "Txat-mezua",
+        "acc_chat_users": "Gelako erabiltzaileak",
+        "acc_chat_log": "Elkarrizketaren historia",
+        "acc_hub_filter": "Iragazi hubak",
         "btn_search": "Bilatu",
         "lbl_networks_filter": "Bilatu hemen:",
         "lbl_file_type": "Mota:",
@@ -954,6 +1038,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» deskargetara gehitu da.",
         "notify_watch_folder_error_body": "Ezin izan da «{filename}» gehitu: {error}",
         "chk_auto_verify": "Deskarga bat osatzean edukia automatikoki egiaztatu",
+        "chk_auto_connect": "Abiaraztean automatikoki konektatu",
         "auto_verify_tooltip": (
             "Deskarga bat amaitzean, diskoan dagoen datua bere erreferentzia-"
             "hash-arekin bat datorren egiaztatzen du (hori onartzen duten "
@@ -1006,6 +1091,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxya",
+        "settings_tab_remote": "Urruneko kontrola",
         "lbl_download_dir": "Deskarga-karpeta:",
         "lbl_shared_folder": "Partekatutako karpetak:",
         "btn_add_folder": "Karpeta gehitu…",
@@ -1020,6 +1106,11 @@ TRANSLATIONS = {
         "theme_light": "Argia",
         "lbl_global_download_limit": "Deskarga-muga globala:",
         "lbl_global_upload_limit": "Igoera-muga globala:",
+        "chk_schedule_enabled": "Aplikatu muga alternatiboak ordu-tarte batean",
+        "lbl_schedule_time_range": "Ordu-tartea:",
+        "lbl_schedule_download_limit": "Deskarga-muga tartean:",
+        "lbl_schedule_upload_limit": "Igoera-muga tartean:",
+        "schedule_tooltip": "Ordu-tarte honetan goiko mugak aplikatzen dira ohiko muga globalen ordez. Amaiera-ordua hasiera-ordua baino lehenagokoa bada, tarteak gauerdia zeharkatzen du (adibidez, 23:00etatik 07:00etara).",
         "spin_unlimited_speed": "Mugarik ez",
         "lbl_auto_retry_attempts": "Iturri gabe geratzean saiakera automatikoak:",
         "lbl_auto_retry_delay": "Saiakeren arteko itxaronaldia:",
@@ -1068,6 +1159,21 @@ TRANSLATIONS = {
             "irteerako TCP konexioei aplikatzen zaie. UDP trafikoa (Kad, "
             "Gnutella2 huba) zuzenean joaten da, proxyrik gabe."
         ),
+        "lbl_remote_enabled": "Urruneko kontrola aktibatu (web APIa):",
+        "lbl_remote_host": "Entzute-helbidea:",
+        "lbl_remote_port": "Ataka:",
+        "lbl_remote_token": "Sarbide-tokena:",
+        "btn_remote_generate_token": "Sortu…",
+        "lbl_remote_note": (
+            "Deskargak kudeatzeko aukera ematen du (pausatu, berrekin, bertan behera "
+            "utzi, ezabatu, bilatu eta berriak gehitu) nabigatzaile batetik, leiho hau "
+            "ireki gabe — erretiluan minimizatutako aplikazioarekin erabiltzeko "
+            "pentsatua. Bere token bat behar da («Sortu…» botoia), lehen aldiz web orrian "
+            "sartu behar dena; hura gabe, APIak edozein eskaera baztertzen du. "
+            "Segurtasunagatik, entzute-helbide lehenetsia 127.0.0.1 da bakarrik (ekipo "
+            "hau bera); 0.0.0.0 jartzeak urruneko kontrola sare lokal osora zabaltzen du."
+        ),
+        "msg_remote_token_required": "Urruneko kontrola aktibatzeko, sarbide-token bat sortu behar duzu aurretik.",
         "lbl_max_results": "Emaitza kop. max.:",
         "lbl_search_timeout": "Bilaketa-denbora:",
         "spin_unlimited": "Mugarik ez (denborak bakarrik mugatzen du)",
@@ -1093,6 +1199,11 @@ TRANSLATIONS = {
         "update_dialog_text": "P2P Total-en bertsio berria eskuragarri dago: {version}.\n\nGitHub-eko deskarga orrira joan nahi duzu?",
         "update_dialog_download": "Deskargatu",
         "update_dialog_cancel": "Utzi",
+        "update_dialog_text_auto": "P2P Total-en bertsio berria eskuragarri dago: {version}.\n\nOrain automatikoki eguneratu nahi duzu?",
+        "update_dialog_update_now": "Eguneratu orain",
+        "update_downloading": "Eguneraketa deskargatzen…",
+        "update_download_failed": "Ezin izan da eguneraketa deskargatu. Saiatu eskuz deskargatzen GitHub-eko orritik.",
+        "update_apply_failed": "Eguneraketa deskargatu da baina ezin izan da instalatu. Saiatu eskuz instalatzen deskargatutako fitxategitik.",
 
         "statusbar_ready": "Prest",
         "statusbar_connected_count": "{n}/{total} sare konektatuta",
@@ -1117,6 +1228,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT nodoak",
         "stat_known_peers": "Nodo ezagunak",
         "stat_active_transfers": "Deskarga aktiboak",
+        "stat_connected_peers": "Konektatutako pareak",
+        "stat_encrypted_peers": "Zifratutako pareak",
+        "stat_utp_connections": "µTP konexioak",
         "stat_shared_files": "Partekatutako fitxategiak",
         "stat_active_uploads": "Igoera aktiboak",
         "stat_id_status": "ID egoera",
@@ -1192,6 +1306,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alertes ({n})",
 
         "search_placeholder": "Rechercher…",
+        "acc_search_query": "Rechercher",
+        "acc_downloads_table": "Tableau des téléchargements",
+        "acc_search_results_table": "Tableau des résultats de recherche",
+        "acc_network_table": "Tableau d'état des réseaux",
+        "acc_chat_message": "Message de discussion",
+        "acc_chat_users": "Utilisateurs du salon",
+        "acc_chat_log": "Historique de la discussion",
+        "acc_hub_filter": "Filtrer les hubs",
         "btn_search": "Rechercher",
         "lbl_networks_filter": "Rechercher dans :",
         "lbl_file_type": "Type :",
@@ -1319,6 +1441,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "« {filename} » a été ajouté aux téléchargements.",
         "notify_watch_folder_error_body": "Impossible d'ajouter « {filename} » : {error}",
         "chk_auto_verify": "Vérifier automatiquement le contenu à la fin d'un téléchargement",
+        "chk_auto_connect": "Se connecter automatiquement au démarrage",
         "auto_verify_tooltip": (
             "À la fin d'un téléchargement, vérifie que les données déjà sur le disque "
             "correspondent à leur hash de référence (uniquement sur les réseaux qui le "
@@ -1370,6 +1493,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Contrôle distant",
         "lbl_download_dir": "Dossier de téléchargement :",
         "lbl_shared_folder": "Dossiers partagés :",
         "btn_add_folder": "Ajouter un dossier…",
@@ -1384,6 +1508,11 @@ TRANSLATIONS = {
         "theme_light": "Clair",
         "lbl_global_download_limit": "Limite globale de téléchargement :",
         "lbl_global_upload_limit": "Limite globale d'envoi :",
+        "chk_schedule_enabled": "Appliquer des limites alternatives sur une plage horaire",
+        "lbl_schedule_time_range": "Plage horaire :",
+        "lbl_schedule_download_limit": "Limite de téléchargement sur la plage :",
+        "lbl_schedule_upload_limit": "Limite d'envoi sur la plage :",
+        "schedule_tooltip": "Pendant cette plage horaire, les limites ci-dessus s'appliquent à la place des limites globales habituelles. Si l'heure de fin est antérieure à l'heure de début, la plage traverse minuit (par exemple de 23:00 à 07:00).",
         "spin_unlimited_speed": "Illimité",
         "lbl_auto_retry_attempts": "Tentatives automatiques en cas de manque de sources :",
         "lbl_auto_retry_delay": "Délai entre les tentatives :",
@@ -1433,6 +1562,22 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k et BitTorrent. Le trafic UDP (Kad, hub "
             "Gnutella2) continue de passer directement, sans proxy."
         ),
+        "lbl_remote_enabled": "Activer le contrôle distant (API web) :",
+        "lbl_remote_host": "Adresse d'écoute :",
+        "lbl_remote_port": "Port :",
+        "lbl_remote_token": "Jeton d'accès :",
+        "btn_remote_generate_token": "Générer…",
+        "lbl_remote_note": (
+            "Permet de gérer les téléchargements (mettre en pause, reprendre, annuler, "
+            "supprimer, rechercher et en ajouter de nouveaux) depuis un navigateur, sans "
+            "ouvrir cette fenêtre — pensé pour être utilisé avec l'application réduite "
+            "dans la zone de notification. Un jeton propre est nécessaire (bouton « "
+            "Générer… ») à saisir sur la page web la première fois ; sans lui, l'API "
+            "rejette toute requête. Par sécurité, l'adresse d'écoute par défaut est "
+            "uniquement 127.0.0.1 (cette même machine) ; la changer en 0.0.0.0 expose le "
+            "contrôle distant à tout le réseau local."
+        ),
+        "msg_remote_token_required": "Il faut générer un jeton d'accès avant d'activer le contrôle distant.",
         "lbl_max_results": "Nombre max. de résultats :",
         "lbl_search_timeout": "Délai de recherche :",
         "spin_unlimited": "Illimité (limité uniquement par le temps)",
@@ -1458,6 +1603,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Une nouvelle version de P2P Total est disponible : {version}.\n\nVoulez-vous accéder à la page de téléchargement sur GitHub ?",
         "update_dialog_download": "Télécharger",
         "update_dialog_cancel": "Annuler",
+        "update_dialog_text_auto": "Une nouvelle version de P2P Total est disponible : {version}.\n\nVoulez-vous la mettre à jour maintenant automatiquement ?",
+        "update_dialog_update_now": "Mettre à jour maintenant",
+        "update_downloading": "Téléchargement de la mise à jour…",
+        "update_download_failed": "Impossible de télécharger la mise à jour. Essayez de la télécharger manuellement depuis la page GitHub.",
+        "update_apply_failed": "La mise à jour a été téléchargée mais n'a pas pu être installée. Essayez de l'installer manuellement à partir du fichier téléchargé.",
 
         "statusbar_ready": "Prêt",
         "statusbar_connected_count": "{n}/{total} réseaux connectés",
@@ -1481,6 +1631,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nœuds DHT",
         "stat_known_peers": "Nœuds connus",
         "stat_active_transfers": "Téléchargements actifs",
+        "stat_connected_peers": "Peers connectés",
+        "stat_encrypted_peers": "Peers chiffrés",
+        "stat_utp_connections": "Connexions µTP",
         "stat_shared_files": "Fichiers partagés",
         "stat_active_uploads": "Envois actifs",
         "stat_id_status": "État de l'ID",
@@ -1555,6 +1708,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Avvisi ({n})",
 
         "search_placeholder": "Cerca…",
+        "acc_search_query": "Cerca",
+        "acc_downloads_table": "Tabella dei download",
+        "acc_search_results_table": "Tabella dei risultati di ricerca",
+        "acc_network_table": "Tabella di stato delle reti",
+        "acc_chat_message": "Messaggio di chat",
+        "acc_chat_users": "Utenti della stanza",
+        "acc_chat_log": "Cronologia della conversazione",
+        "acc_hub_filter": "Filtra hub",
         "btn_search": "Cerca",
         "lbl_networks_filter": "Cerca in:",
         "lbl_file_type": "Tipo:",
@@ -1682,6 +1843,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» è stato aggiunto ai download.",
         "notify_watch_folder_error_body": "Impossibile aggiungere «{filename}»: {error}",
         "chk_auto_verify": "Verifica automaticamente il contenuto al termine di un download",
+        "chk_auto_connect": "Connetti automaticamente all'avvio",
         "auto_verify_tooltip": (
             "Al termine di un download, verifica che i dati già presenti sul disco "
             "corrispondano al loro hash di riferimento (solo sulle reti che lo "
@@ -1733,6 +1895,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Controllo remoto",
         "lbl_download_dir": "Cartella di download:",
         "lbl_shared_folder": "Cartelle condivise:",
         "btn_add_folder": "Aggiungi cartella…",
@@ -1747,6 +1910,11 @@ TRANSLATIONS = {
         "theme_light": "Chiaro",
         "lbl_global_download_limit": "Limite globale di download:",
         "lbl_global_upload_limit": "Limite globale di upload:",
+        "chk_schedule_enabled": "Applica limiti alternativi in una fascia oraria",
+        "lbl_schedule_time_range": "Fascia oraria:",
+        "lbl_schedule_download_limit": "Limite di download nella fascia:",
+        "lbl_schedule_upload_limit": "Limite di upload nella fascia:",
+        "schedule_tooltip": "Durante questa fascia oraria si applicano i limiti sopra indicati invece dei normali limiti globali. Se l'ora di fine è precedente all'ora di inizio, la fascia attraversa la mezzanotte (ad esempio dalle 23:00 alle 07:00).",
         "spin_unlimited_speed": "Illimitato",
         "lbl_auto_retry_attempts": "Tentativi automatici in caso di mancanza di fonti:",
         "lbl_auto_retry_delay": "Ritardo tra i tentativi:",
@@ -1796,6 +1964,22 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k e BitTorrent. Il traffico UDP (Kad, hub "
             "Gnutella2) continua a passare direttamente, senza proxy."
         ),
+        "lbl_remote_enabled": "Attiva il controllo remoto (API web):",
+        "lbl_remote_host": "Indirizzo di ascolto:",
+        "lbl_remote_port": "Porta:",
+        "lbl_remote_token": "Token di accesso:",
+        "btn_remote_generate_token": "Genera…",
+        "lbl_remote_note": (
+            "Permette di gestire i download (mettere in pausa, riprendere, annullare, "
+            "eliminare, cercare e aggiungerne di nuovi) da un browser, senza aprire "
+            "questa finestra — pensato per l'uso con l'applicazione minimizzata nella "
+            "barra di sistema. Serve un token proprio (pulsante «Genera…») da inserire "
+            "nella pagina web la prima volta; senza di esso, l'API rifiuta qualsiasi "
+            "richiesta. Per sicurezza, l'indirizzo di ascolto predefinito è solo "
+            "127.0.0.1 (questo stesso computer); cambiarlo in 0.0.0.0 espone il controllo "
+            "remoto a tutta la rete locale."
+        ),
+        "msg_remote_token_required": "Per attivare il controllo remoto è necessario generare prima un token di accesso.",
         "lbl_max_results": "Numero massimo di risultati:",
         "lbl_search_timeout": "Timeout di ricerca:",
         "spin_unlimited": "Illimitato (limitato solo dal tempo)",
@@ -1821,6 +2005,11 @@ TRANSLATIONS = {
         "update_dialog_text": "È disponibile una nuova versione di P2P Total: {version}.\n\nVuoi andare alla pagina di download su GitHub?",
         "update_dialog_download": "Scarica",
         "update_dialog_cancel": "Annulla",
+        "update_dialog_text_auto": "È disponibile una nuova versione di P2P Total: {version}.\n\nVuoi aggiornarla ora automaticamente?",
+        "update_dialog_update_now": "Aggiorna ora",
+        "update_downloading": "Download dell'aggiornamento…",
+        "update_download_failed": "Impossibile scaricare l'aggiornamento. Prova a scaricarlo manualmente dalla pagina GitHub.",
+        "update_apply_failed": "L'aggiornamento è stato scaricato ma non è stato possibile installarlo. Prova a installarlo manualmente dal file scaricato.",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} reti connesse",
@@ -1844,6 +2033,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nodi DHT",
         "stat_known_peers": "Nodi conosciuti",
         "stat_active_transfers": "Download attivi",
+        "stat_connected_peers": "Peer connessi",
+        "stat_encrypted_peers": "Peer cifrati",
+        "stat_utp_connections": "Connessioni µTP",
         "stat_shared_files": "File condivisi",
         "stat_active_uploads": "Upload attivi",
         "stat_id_status": "Stato dell'ID",
@@ -1918,6 +2110,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alertas ({n})",
 
         "search_placeholder": "Pesquisar…",
+        "acc_search_query": "Pesquisar",
+        "acc_downloads_table": "Tabela de transferências",
+        "acc_search_results_table": "Tabela de resultados de pesquisa",
+        "acc_network_table": "Tabela de estado das redes",
+        "acc_chat_message": "Mensagem de chat",
+        "acc_chat_users": "Utilizadores da sala",
+        "acc_chat_log": "Histórico da conversa",
+        "acc_hub_filter": "Filtrar hubs",
         "btn_search": "Pesquisar",
         "lbl_networks_filter": "Pesquisar em:",
         "lbl_file_type": "Tipo:",
@@ -2045,6 +2245,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» foi adicionado às transferências.",
         "notify_watch_folder_error_body": "Não foi possível adicionar «{filename}»: {error}",
         "chk_auto_verify": "Verificar automaticamente o conteúdo ao terminar uma transferência",
+        "chk_auto_connect": "Ligar automaticamente ao iniciar",
         "auto_verify_tooltip": (
             "Ao terminar uma transferência, verifica se os dados já presentes no "
             "disco correspondem ao seu hash de referência (apenas nas redes que o "
@@ -2096,6 +2297,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Controlo remoto",
         "lbl_download_dir": "Pasta de transferências:",
         "lbl_shared_folder": "Pastas partilhadas:",
         "btn_add_folder": "Adicionar pasta…",
@@ -2110,6 +2312,11 @@ TRANSLATIONS = {
         "theme_light": "Claro",
         "lbl_global_download_limit": "Limite global de transferência:",
         "lbl_global_upload_limit": "Limite global de envio:",
+        "chk_schedule_enabled": "Aplicar limites alternativos numa faixa horária",
+        "lbl_schedule_time_range": "Faixa horária:",
+        "lbl_schedule_download_limit": "Limite de download na faixa:",
+        "lbl_schedule_upload_limit": "Limite de upload na faixa:",
+        "schedule_tooltip": "Durante esta faixa horária aplicam-se os limites acima em vez dos limites globais normais. Se a hora de fim for anterior à de início, a faixa atravessa a meia-noite (por exemplo, das 23:00 às 07:00).",
         "spin_unlimited_speed": "Ilimitado",
         "lbl_auto_retry_attempts": "Tentativas automáticas em caso de falta de fontes:",
         "lbl_auto_retry_delay": "Atraso entre tentativas:",
@@ -2159,6 +2366,21 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k e BitTorrent. O tráfego UDP (Kad, hub "
             "Gnutella2) continua a passar diretamente, sem proxy."
         ),
+        "lbl_remote_enabled": "Ativar controlo remoto (API web):",
+        "lbl_remote_host": "Endereço de escuta:",
+        "lbl_remote_port": "Porta:",
+        "lbl_remote_token": "Token de acesso:",
+        "btn_remote_generate_token": "Gerar…",
+        "lbl_remote_note": (
+            "Permite gerir as transferências (pausar, retomar, cancelar, eliminar, "
+            "pesquisar e adicionar novas) a partir de um navegador, sem abrir esta janela "
+            "— pensado para usar com a aplicação minimizada na bandeja. É preciso um "
+            "token próprio (botão «Gerar…») a introduzir na página web da primeira vez; "
+            "sem ele, a API rejeita qualquer pedido. Por segurança, o endereço de escuta "
+            "por defeito é só 127.0.0.1 (este mesmo computador); mudá-lo para 0.0.0.0 "
+            "expõe o controlo remoto a toda a rede local."
+        ),
+        "msg_remote_token_required": "Para ativar o controlo remoto é preciso gerar antes um token de acesso.",
         "lbl_max_results": "Número máximo de resultados:",
         "lbl_search_timeout": "Tempo limite de pesquisa:",
         "spin_unlimited": "Ilimitado (limitado apenas pelo tempo)",
@@ -2184,6 +2406,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Há uma nova versão do P2P Total disponível: {version}.\n\nDeseja ir para a página de download no GitHub?",
         "update_dialog_download": "Descarregar",
         "update_dialog_cancel": "Cancelar",
+        "update_dialog_text_auto": "Há uma nova versão do P2P Total disponível: {version}.\n\nQuer atualizá-la agora automaticamente?",
+        "update_dialog_update_now": "Atualizar agora",
+        "update_downloading": "A descarregar a atualização…",
+        "update_download_failed": "Não foi possível descarregar a atualização. Tente descarregá-la manualmente a partir da página do GitHub.",
+        "update_apply_failed": "A atualização foi descarregada mas não foi possível instalá-la. Tente instalá-la manualmente a partir do ficheiro descarregado.",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} redes ligadas",
@@ -2207,6 +2434,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nós DHT",
         "stat_known_peers": "Nós conhecidos",
         "stat_active_transfers": "Transferências ativas",
+        "stat_connected_peers": "Peers conectados",
+        "stat_encrypted_peers": "Peers cifrados",
+        "stat_utp_connections": "Conexões µTP",
         "stat_shared_files": "Ficheiros partilhados",
         "stat_active_uploads": "Envios ativos",
         "stat_id_status": "Estado do ID",
@@ -2281,6 +2511,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Benachrichtigungen ({n})",
 
         "search_placeholder": "Suchen…",
+        "acc_search_query": "Suchen",
+        "acc_downloads_table": "Download-Tabelle",
+        "acc_search_results_table": "Suchergebnistabelle",
+        "acc_network_table": "Netzwerkstatustabelle",
+        "acc_chat_message": "Chat-Nachricht",
+        "acc_chat_users": "Benutzer im Raum",
+        "acc_chat_log": "Chatverlauf",
+        "acc_hub_filter": "Hubs filtern",
         "btn_search": "Suchen",
         "lbl_networks_filter": "Suchen in:",
         "lbl_file_type": "Typ:",
@@ -2409,6 +2647,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "„{filename}“ wurde zu den Downloads hinzugefügt.",
         "notify_watch_folder_error_body": "„{filename}“ konnte nicht hinzugefügt werden: {error}",
         "chk_auto_verify": "Inhalt am Ende eines Downloads automatisch überprüfen",
+        "chk_auto_connect": "Beim Start automatisch verbinden",
         "auto_verify_tooltip": (
             "Am Ende eines Downloads wird geprüft, ob die bereits auf der "
             "Festplatte vorhandenen Daten mit ihrem Referenz-Hash übereinstimmen "
@@ -2461,6 +2700,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Fernsteuerung",
         "lbl_download_dir": "Download-Ordner:",
         "lbl_shared_folder": "Freigegebene Ordner:",
         "btn_add_folder": "Ordner hinzufügen…",
@@ -2475,6 +2715,11 @@ TRANSLATIONS = {
         "theme_light": "Hell",
         "lbl_global_download_limit": "Globale Download-Begrenzung:",
         "lbl_global_upload_limit": "Globale Upload-Begrenzung:",
+        "chk_schedule_enabled": "Alternative Limits in einem Zeitfenster anwenden",
+        "lbl_schedule_time_range": "Zeitfenster:",
+        "lbl_schedule_download_limit": "Download-Limit im Zeitfenster:",
+        "lbl_schedule_upload_limit": "Upload-Limit im Zeitfenster:",
+        "schedule_tooltip": "In diesem Zeitfenster gelten die oben genannten Limits anstelle der normalen globalen Limits. Liegt die Endzeit vor der Startzeit, reicht das Zeitfenster über Mitternacht hinaus (z. B. von 23:00 bis 07:00 Uhr).",
         "spin_unlimited_speed": "Unbegrenzt",
         "lbl_auto_retry_attempts": "Automatische Versuche bei fehlenden Quellen:",
         "lbl_auto_retry_delay": "Verzögerung zwischen Versuchen:",
@@ -2524,6 +2769,22 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k und BitTorrent. UDP-Verkehr (Kad, Gnutella2-Hub) "
             "läuft weiterhin direkt, ohne Proxy."
         ),
+        "lbl_remote_enabled": "Fernsteuerung aktivieren (Web-API):",
+        "lbl_remote_host": "Lauschadresse:",
+        "lbl_remote_port": "Port:",
+        "lbl_remote_token": "Zugriffstoken:",
+        "btn_remote_generate_token": "Erzeugen…",
+        "lbl_remote_note": (
+            "Ermöglicht die Verwaltung der Downloads (pausieren, fortsetzen, abbrechen, "
+            "löschen, suchen und neue hinzufügen) über einen Browser, ohne dieses Fenster "
+            "zu öffnen — gedacht für die Nutzung bei minimierter Anwendung im "
+            "Systemabschnitt. Es wird ein eigenes Token benötigt (Schaltfläche "
+            "„Erzeugen…“), das beim ersten Mal auf der Webseite eingegeben werden muss; "
+            "ohne es weist die API jede Anfrage zurück. Aus Sicherheitsgründen lautet die "
+            "Standard-Lauschadresse nur 127.0.0.1 (dieser Rechner); die Änderung auf "
+            "0.0.0.0 setzt die Fernsteuerung dem gesamten lokalen Netzwerk aus."
+        ),
+        "msg_remote_token_required": "Um die Fernsteuerung zu aktivieren, muss zuerst ein Zugriffstoken erzeugt werden.",
         "lbl_max_results": "Max. Anzahl Ergebnisse:",
         "lbl_search_timeout": "Such-Timeout:",
         "spin_unlimited": "Unbegrenzt (nur durch die Zeit begrenzt)",
@@ -2549,6 +2810,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Eine neue Version von P2P Total ist verfügbar: {version}.\n\nMöchten Sie zur Download-Seite auf GitHub gehen?",
         "update_dialog_download": "Herunterladen",
         "update_dialog_cancel": "Abbrechen",
+        "update_dialog_text_auto": "Eine neue Version von P2P Total ist verfügbar: {version}.\n\nMöchtest du jetzt automatisch aktualisieren?",
+        "update_dialog_update_now": "Jetzt aktualisieren",
+        "update_downloading": "Update wird heruntergeladen…",
+        "update_download_failed": "Das Update konnte nicht heruntergeladen werden. Versuche es manuell über die GitHub-Seite herunterzuladen.",
+        "update_apply_failed": "Das Update wurde heruntergeladen, konnte aber nicht installiert werden. Versuche es manuell aus der heruntergeladenen Datei zu installieren.",
 
         "statusbar_ready": "Bereit",
         "statusbar_connected_count": "{n}/{total} Netzwerke verbunden",
@@ -2572,6 +2838,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT-Knoten",
         "stat_known_peers": "Bekannte Knoten",
         "stat_active_transfers": "Aktive Downloads",
+        "stat_connected_peers": "Verbundene Peers",
+        "stat_encrypted_peers": "Verschlüsselte Peers",
+        "stat_utp_connections": "µTP-Verbindungen",
         "stat_shared_files": "Freigegebene Dateien",
         "stat_active_uploads": "Aktive Uploads",
         "stat_id_status": "ID-Status",
@@ -2646,6 +2915,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alertes ({n})",
 
         "search_placeholder": "Cerca…",
+        "acc_search_query": "Cerca",
+        "acc_downloads_table": "Taula de baixades",
+        "acc_search_results_table": "Taula de resultats de cerca",
+        "acc_network_table": "Taula d'estat de les xarxes",
+        "acc_chat_message": "Missatge de xat",
+        "acc_chat_users": "Usuaris de la sala",
+        "acc_chat_log": "Historial de la conversa",
+        "acc_hub_filter": "Filtra hubs",
         "btn_search": "Cerca",
         "lbl_networks_filter": "Cerca a:",
         "lbl_file_type": "Tipus:",
@@ -2773,6 +3050,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» s'ha afegit a les descàrregues.",
         "notify_watch_folder_error_body": "No s'ha pogut afegir «{filename}»: {error}",
         "chk_auto_verify": "Verifica automàticament el contingut en acabar una descàrrega",
+        "chk_auto_connect": "Connecta automàticament en iniciar",
         "auto_verify_tooltip": (
             "En acabar una descàrrega, verifica que les dades ja presents al disc "
             "coincideixen amb el seu hash de referència (només a les xarxes que ho "
@@ -2824,6 +3102,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Control remot",
         "lbl_download_dir": "Carpeta de descàrregues:",
         "lbl_shared_folder": "Carpetes compartides:",
         "btn_add_folder": "Afegeix una carpeta…",
@@ -2838,6 +3117,11 @@ TRANSLATIONS = {
         "theme_light": "Clar",
         "lbl_global_download_limit": "Límit global de descàrrega:",
         "lbl_global_upload_limit": "Límit global de pujada:",
+        "chk_schedule_enabled": "Aplica límits alternatius en una franja horària",
+        "lbl_schedule_time_range": "Franja horària:",
+        "lbl_schedule_download_limit": "Límit de baixada a la franja:",
+        "lbl_schedule_upload_limit": "Límit de pujada a la franja:",
+        "schedule_tooltip": "Durant aquesta franja horària s'apliquen els límits de dalt en lloc dels límits globals normals. Si l'hora de fi és anterior a la d'inici, la franja travessa la mitjanit (per exemple, de 23:00 a 07:00).",
         "spin_unlimited_speed": "Il·limitat",
         "lbl_auto_retry_attempts": "Intents automàtics en cas de manca de fonts:",
         "lbl_auto_retry_delay": "Retard entre intents:",
@@ -2887,6 +3171,21 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k i BitTorrent. El trànsit UDP (Kad, hub "
             "Gnutella2) continua passant directament, sense proxy."
         ),
+        "lbl_remote_enabled": "Activa el control remot (API web):",
+        "lbl_remote_host": "Adreça d'escolta:",
+        "lbl_remote_port": "Port:",
+        "lbl_remote_token": "Testimoni d'accés:",
+        "btn_remote_generate_token": "Genera…",
+        "lbl_remote_note": (
+            "Permet gestionar les descàrregues (pausar, reprendre, cancel·lar, esborrar, "
+            "cercar i afegir-ne de noves) des d'un navegador, sense obrir aquesta "
+            "finestra — pensat per usar-lo amb l'aplicació minimitzada a la safata. Cal "
+            "un testimoni propi (botó «Genera…») que s'ha d'introduir a la pàgina web la "
+            "primera vegada; sense ell, l'API rebutja qualsevol petició. Per seguretat, "
+            "l'adreça d'escolta per defecte és només 127.0.0.1 (aquest mateix equip); "
+            "canviar-la a 0.0.0.0 exposa el control remot a tota la xarxa local."
+        ),
+        "msg_remote_token_required": "Per activar el control remot cal generar abans un testimoni d'accés.",
         "lbl_max_results": "Nombre màxim de resultats:",
         "lbl_search_timeout": "Temps d'espera de la cerca:",
         "spin_unlimited": "Il·limitat (limitat només pel temps)",
@@ -2912,6 +3211,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Hi ha una nova versió de P2P Total disponible: {version}.\n\nVols anar a la pàgina de descàrrega a GitHub?",
         "update_dialog_download": "Descarrega",
         "update_dialog_cancel": "Cancel·la",
+        "update_dialog_text_auto": "Hi ha una nova versió de P2P Total disponible: {version}.\n\nVols actualitzar-la ara automàticament?",
+        "update_dialog_update_now": "Actualitza ara",
+        "update_downloading": "Descarregant l'actualització…",
+        "update_download_failed": "No s'ha pogut descarregar l'actualització. Prova de descarregar-la manualment des de la pàgina de GitHub.",
+        "update_apply_failed": "L'actualització s'ha descarregat però no s'ha pogut instal·lar. Prova d'instal·lar-la manualment des del fitxer descarregat.",
 
         "statusbar_ready": "Preparat",
         "statusbar_connected_count": "{n}/{total} xarxes connectades",
@@ -2935,6 +3239,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nodes DHT",
         "stat_known_peers": "Nodes coneguts",
         "stat_active_transfers": "Descàrregues actives",
+        "stat_connected_peers": "Peers connectats",
+        "stat_encrypted_peers": "Peers xifrats",
+        "stat_utp_connections": "Connexions µTP",
         "stat_shared_files": "Fitxers compartits",
         "stat_active_uploads": "Pujades actives",
         "stat_id_status": "Estat de l'ID",
@@ -3009,6 +3316,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Alertas ({n})",
 
         "search_placeholder": "Buscar…",
+        "acc_search_query": "Buscar",
+        "acc_downloads_table": "Táboa de descargas",
+        "acc_search_results_table": "Táboa de resultados de busca",
+        "acc_network_table": "Táboa de estado das redes",
+        "acc_chat_message": "Mensaxe de chat",
+        "acc_chat_users": "Usuarios da sala",
+        "acc_chat_log": "Historial da conversa",
+        "acc_hub_filter": "Filtrar hubs",
         "btn_search": "Buscar",
         "lbl_networks_filter": "Buscar en:",
         "lbl_file_type": "Tipo:",
@@ -3136,6 +3451,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» engadiuse ás descargas.",
         "notify_watch_folder_error_body": "Non se puido engadir «{filename}»: {error}",
         "chk_auto_verify": "Verificar automaticamente o contido ao rematar unha descarga",
+        "chk_auto_connect": "Conectar automaticamente ao iniciar",
         "auto_verify_tooltip": (
             "Ao rematar unha descarga, verifica que os datos xa presentes no "
             "disco coinciden co seu hash de referencia (só nas redes que o "
@@ -3187,6 +3503,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Proxy",
+        "settings_tab_remote": "Control remoto",
         "lbl_download_dir": "Cartafol de descargas:",
         "lbl_shared_folder": "Cartafoles compartidos:",
         "btn_add_folder": "Engadir cartafol…",
@@ -3201,6 +3518,11 @@ TRANSLATIONS = {
         "theme_light": "Claro",
         "lbl_global_download_limit": "Límite global de descarga:",
         "lbl_global_upload_limit": "Límite global de envío:",
+        "chk_schedule_enabled": "Aplicar límites alternativos nunha franxa horaria",
+        "lbl_schedule_time_range": "Franxa horaria:",
+        "lbl_schedule_download_limit": "Límite de descarga na franxa:",
+        "lbl_schedule_upload_limit": "Límite de envío na franxa:",
+        "schedule_tooltip": "Durante esta franxa horaria aplícanse os límites de arriba en vez dos límites globais normais. Se a hora de fin é anterior á de inicio, a franxa cruza a medianoite (por exemplo, das 23:00 ás 07:00).",
         "spin_unlimited_speed": "Ilimitado",
         "lbl_auto_retry_attempts": "Intentos automáticos en caso de falta de fontes:",
         "lbl_auto_retry_delay": "Atraso entre intentos:",
@@ -3250,6 +3572,21 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k e BitTorrent. O tráfico UDP (Kad, hub "
             "Gnutella2) segue pasando directamente, sen proxy."
         ),
+        "lbl_remote_enabled": "Activar o control remoto (API web):",
+        "lbl_remote_host": "Enderezo de escoita:",
+        "lbl_remote_port": "Porto:",
+        "lbl_remote_token": "Token de acceso:",
+        "btn_remote_generate_token": "Xerar…",
+        "lbl_remote_note": (
+            "Permite xestionar as descargas (pausar, retomar, cancelar, eliminar, buscar "
+            "e engadir novas) desde un navegador, sen abrir esta xanela — pensado para "
+            "usalo coa aplicación minimizada na bandexa. Fai falta un token propio (botón "
+            "«Xerar…») que hai que introducir na páxina web a primeira vez; sen el, a API "
+            "rexeita calquera petición. Por seguridade, o enderezo de escoita por defecto "
+            "é só 127.0.0.1 (este mesmo equipo); cambialo a 0.0.0.0 expón o control "
+            "remoto a toda a rede local."
+        ),
+        "msg_remote_token_required": "Para activar o control remoto hai que xerar antes un token de acceso.",
         "lbl_max_results": "Número máximo de resultados:",
         "lbl_search_timeout": "Tempo límite de busca:",
         "spin_unlimited": "Ilimitado (limitado só polo tempo)",
@@ -3275,6 +3612,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Hai unha nova versión de P2P Total dispoñible: {version}.\n\nQueres ir á páxina de descarga en GitHub?",
         "update_dialog_download": "Descargar",
         "update_dialog_cancel": "Cancelar",
+        "update_dialog_text_auto": "Hai unha nova versión de P2P Total dispoñible: {version}.\n\nQueres actualizala agora automaticamente?",
+        "update_dialog_update_now": "Actualizar agora",
+        "update_downloading": "Descargando a actualización…",
+        "update_download_failed": "Non se puido descargar a actualización. Proba a descargala manualmente desde a páxina de GitHub.",
+        "update_apply_failed": "A actualización descargouse pero non se puido instalar. Proba a instalala manualmente desde o ficheiro descargado.",
 
         "statusbar_ready": "Listo",
         "statusbar_connected_count": "{n}/{total} redes conectadas",
@@ -3298,6 +3640,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Nodos DHT",
         "stat_known_peers": "Nodos coñecidos",
         "stat_active_transfers": "Descargas activas",
+        "stat_connected_peers": "Peers conectados",
+        "stat_encrypted_peers": "Peers cifrados",
+        "stat_utp_connections": "Conexións µTP",
         "stat_shared_files": "Ficheiros compartidos",
         "stat_active_uploads": "Envíos activos",
         "stat_id_status": "Estado do ID",
@@ -3372,6 +3717,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 Оповещения ({n})",
 
         "search_placeholder": "Искать…",
+        "acc_search_query": "Поиск",
+        "acc_downloads_table": "Таблица загрузок",
+        "acc_search_results_table": "Таблица результатов поиска",
+        "acc_network_table": "Таблица состояния сетей",
+        "acc_chat_message": "Сообщение чата",
+        "acc_chat_users": "Пользователи комнаты",
+        "acc_chat_log": "История чата",
+        "acc_hub_filter": "Фильтр хабов",
         "btn_search": "Искать",
         "lbl_networks_filter": "Искать в:",
         "lbl_file_type": "Тип:",
@@ -3499,6 +3852,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}» добавлен в загрузки.",
         "notify_watch_folder_error_body": "Не удалось добавить «{filename}»: {error}",
         "chk_auto_verify": "Автоматически проверять содержимое по завершении загрузки",
+        "chk_auto_connect": "Подключаться автоматически при запуске",
         "auto_verify_tooltip": (
             "По завершении загрузки проверяет, соответствуют ли уже сохранённые "
             "на диске данные их эталонному хешу (только в сетях, которые это "
@@ -3550,6 +3904,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "Прокси",
+        "settings_tab_remote": "Удалённое управление",
         "lbl_download_dir": "Папка загрузок:",
         "lbl_shared_folder": "Общие папки:",
         "btn_add_folder": "Добавить папку…",
@@ -3564,6 +3919,11 @@ TRANSLATIONS = {
         "theme_light": "Светлая",
         "lbl_global_download_limit": "Общий лимит загрузки:",
         "lbl_global_upload_limit": "Общий лимит отдачи:",
+        "chk_schedule_enabled": "Применять альтернативные лимиты в заданный промежуток времени",
+        "lbl_schedule_time_range": "Промежуток времени:",
+        "lbl_schedule_download_limit": "Лимит загрузки в этот промежуток:",
+        "lbl_schedule_upload_limit": "Лимит отдачи в этот промежуток:",
+        "schedule_tooltip": "В этот промежуток времени действуют указанные выше лимиты вместо обычных глобальных лимитов. Если время окончания раньше времени начала, промежуток переходит через полночь (например, с 23:00 до 07:00).",
         "spin_unlimited_speed": "Без ограничений",
         "lbl_auto_retry_attempts": "Автоматические попытки при нехватке источников:",
         "lbl_auto_retry_delay": "Задержка между попытками:",
@@ -3613,6 +3973,22 @@ TRANSLATIONS = {
             "Gnutella2, eMule/eD2k и BitTorrent. UDP-трафик (Kad, хаб "
             "Gnutella2) по-прежнему идёт напрямую, без прокси."
         ),
+        "lbl_remote_enabled": "Включить удалённое управление (веб-API):",
+        "lbl_remote_host": "Адрес прослушивания:",
+        "lbl_remote_port": "Порт:",
+        "lbl_remote_token": "Токен доступа:",
+        "btn_remote_generate_token": "Создать…",
+        "lbl_remote_note": (
+            "Позволяет управлять загрузками (приостанавливать, возобновлять, отменять, "
+            "удалять, искать и добавлять новые) из браузера, не открывая это окно — "
+            "рассчитано на использование при свёрнутом в трей приложении. Нужен "
+            "собственный токен (кнопка «Создать…»), который нужно ввести на веб-странице "
+            "в первый раз; без него API отклоняет любой запрос. Из соображений "
+            "безопасности адрес прослушивания по умолчанию — только 127.0.0.1 (этот же "
+            "компьютер); изменение на 0.0.0.0 открывает удалённое управление всей "
+            "локальной сети."
+        ),
+        "msg_remote_token_required": "Перед включением удалённого управления нужно создать токен доступа.",
         "lbl_max_results": "Макс. количество результатов:",
         "lbl_search_timeout": "Тайм-аут поиска:",
         "spin_unlimited": "Без ограничений (ограничено только временем)",
@@ -3638,6 +4014,11 @@ TRANSLATIONS = {
         "update_dialog_text": "Доступна новая версия P2P Total: {version}.\n\nПерейти на страницу загрузки на GitHub?",
         "update_dialog_download": "Скачать",
         "update_dialog_cancel": "Отмена",
+        "update_dialog_text_auto": "Доступна новая версия P2P Total: {version}.\n\nХотите обновить её сейчас автоматически?",
+        "update_dialog_update_now": "Обновить сейчас",
+        "update_downloading": "Загрузка обновления…",
+        "update_download_failed": "Не удалось загрузить обновление. Попробуйте скачать его вручную со страницы GitHub.",
+        "update_apply_failed": "Обновление загружено, но не удалось его установить. Попробуйте установить его вручную из скачанного файла.",
 
         "statusbar_ready": "Готово",
         "statusbar_connected_count": "{n}/{total} сетей подключено",
@@ -3661,6 +4042,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "Узлы DHT",
         "stat_known_peers": "Известные узлы",
         "stat_active_transfers": "Активные загрузки",
+        "stat_connected_peers": "Подключённые пиры",
+        "stat_encrypted_peers": "Зашифрованные пиры",
+        "stat_utp_connections": "µTP-соединения",
         "stat_shared_files": "Общие файлы",
         "stat_active_uploads": "Активные отдачи",
         "stat_id_status": "Статус ID",
@@ -3735,6 +4119,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 提醒 ({n})",
 
         "search_placeholder": "搜索…",
+        "acc_search_query": "搜索",
+        "acc_downloads_table": "传输列表",
+        "acc_search_results_table": "搜索结果列表",
+        "acc_network_table": "网络状态列表",
+        "acc_chat_message": "聊天消息",
+        "acc_chat_users": "聊天室用户",
+        "acc_chat_log": "聊天记录",
+        "acc_hub_filter": "筛选集线器",
         "btn_search": "搜索",
         "lbl_networks_filter": "搜索范围：",
         "lbl_file_type": "类型：",
@@ -3860,6 +4252,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "「{filename}」已添加到下载列表。",
         "notify_watch_folder_error_body": "无法添加「{filename}」：{error}",
         "chk_auto_verify": "下载完成后自动验证内容",
+        "chk_auto_connect": "启动时自动连接",
         "auto_verify_tooltip": (
             "下载完成后，验证磁盘上已有的数据是否与参考哈希值一致（仅限支持"
             "此功能的网络；目前仅 BitTorrent，通过 libtorrent 原生重新校验"
@@ -3909,6 +4302,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "代理",
+        "settings_tab_remote": "远程控制",
         "lbl_download_dir": "下载文件夹：",
         "lbl_shared_folder": "共享文件夹：",
         "btn_add_folder": "添加文件夹…",
@@ -3923,6 +4317,11 @@ TRANSLATIONS = {
         "theme_light": "浅色",
         "lbl_global_download_limit": "全局下载限速：",
         "lbl_global_upload_limit": "全局上传限速：",
+        "chk_schedule_enabled": "在指定时间段应用备用限速",
+        "lbl_schedule_time_range": "时间段：",
+        "lbl_schedule_download_limit": "该时间段的下载限速：",
+        "lbl_schedule_upload_limit": "该时间段的上传限速：",
+        "schedule_tooltip": "在此时间段内将应用上面的限速，而不是常规的全局限速。如果结束时间早于开始时间，则该时间段会跨越午夜（例如从 23:00 到次日 07:00）。",
         "spin_unlimited_speed": "无限制",
         "lbl_auto_retry_attempts": "来源不足时的自动重试次数：",
         "lbl_auto_retry_delay": "重试之间的延迟：",
@@ -3971,6 +4370,13 @@ TRANSLATIONS = {
             "出站 TCP 连接。UDP 流量（Kad、Gnutella2 集线器）仍将直接通行，"
             "不经过代理。"
         ),
+        "lbl_remote_enabled": "启用远程控制（网页 API）：",
+        "lbl_remote_host": "监听地址：",
+        "lbl_remote_port": "端口：",
+        "lbl_remote_token": "访问令牌：",
+        "btn_remote_generate_token": "生成…",
+        "lbl_remote_note": "无需打开此窗口即可从浏览器管理下载（暂停、继续、取消、删除、搜索并添加新任务）——适合在应用最小化到托盘时使用。需要一个专属令牌（点击“生成…”按钮），首次使用时须在网页中输入；没有它，接口会拒绝任何请求。出于安全考虑，默认监听地址仅为 127.0.0.1（本机）；改为 0.0.0.0 会将远程控制暴露给整个局域网。",
+        "msg_remote_token_required": "启用远程控制前需要先生成一个访问令牌。",
         "lbl_max_results": "最大结果数：",
         "lbl_search_timeout": "搜索超时：",
         "spin_unlimited": "无限制（仅受时间限制）",
@@ -3995,6 +4401,11 @@ TRANSLATIONS = {
         "update_dialog_text": "P2P Total 有新版本可用：{version}。\n\n是否前往 GitHub 下载页面？",
         "update_dialog_download": "下载",
         "update_dialog_cancel": "取消",
+        "update_dialog_text_auto": "P2P Total 有新版本可用：{version}。\n\n是否立即自动更新？",
+        "update_dialog_update_now": "立即更新",
+        "update_downloading": "正在下载更新…",
+        "update_download_failed": "无法下载更新。请尝试从 GitHub 页面手动下载。",
+        "update_apply_failed": "更新已下载，但无法安装。请尝试从已下载的文件手动安装。",
 
         "statusbar_ready": "就绪",
         "statusbar_connected_count": "{n}/{total} 个网络已连接",
@@ -4018,6 +4429,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT 节点",
         "stat_known_peers": "已知节点",
         "stat_active_transfers": "活动下载",
+        "stat_connected_peers": "已连接的节点",
+        "stat_encrypted_peers": "已加密的节点",
+        "stat_utp_connections": "µTP 连接数",
         "stat_shared_files": "共享文件",
         "stat_active_uploads": "活动上传",
         "stat_id_status": "ID 状态",
@@ -4092,6 +4506,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 アラート ({n})",
 
         "search_placeholder": "検索…",
+        "acc_search_query": "検索",
+        "acc_downloads_table": "ダウンロード一覧",
+        "acc_search_results_table": "検索結果一覧",
+        "acc_network_table": "ネットワーク状態一覧",
+        "acc_chat_message": "チャットメッセージ",
+        "acc_chat_users": "ルームのユーザー",
+        "acc_chat_log": "チャット履歴",
+        "acc_hub_filter": "ハブを絞り込む",
         "btn_search": "検索",
         "lbl_networks_filter": "検索対象：",
         "lbl_file_type": "種類：",
@@ -4219,6 +4641,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "「{filename}」をダウンロードに追加しました。",
         "notify_watch_folder_error_body": "「{filename}」を追加できませんでした：{error}",
         "chk_auto_verify": "ダウンロード完了時にコンテンツを自動検証する",
+        "chk_auto_connect": "起動時に自動接続する",
         "auto_verify_tooltip": (
             "ダウンロード完了時に、ディスク上に既にあるデータが参照ハッシュと"
             "一致するかを検証します（対応しているネットワークのみ。現時点では "
@@ -4270,6 +4693,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "プロキシ",
+        "settings_tab_remote": "リモート操作",
         "lbl_download_dir": "ダウンロードフォルダ：",
         "lbl_shared_folder": "共有フォルダ：",
         "btn_add_folder": "フォルダを追加…",
@@ -4284,6 +4708,11 @@ TRANSLATIONS = {
         "theme_light": "ライト",
         "lbl_global_download_limit": "全体のダウンロード制限：",
         "lbl_global_upload_limit": "全体のアップロード制限：",
+        "chk_schedule_enabled": "指定した時間帯に別の制限を適用する",
+        "lbl_schedule_time_range": "時間帯：",
+        "lbl_schedule_download_limit": "この時間帯のダウンロード制限：",
+        "lbl_schedule_upload_limit": "この時間帯のアップロード制限：",
+        "schedule_tooltip": "この時間帯には、通常のグローバル制限の代わりに上記の制限が適用されます。終了時刻が開始時刻より前の場合、時間帯は深夜をまたぎます（例：23:00～07:00）。",
         "spin_unlimited_speed": "無制限",
         "lbl_auto_retry_attempts": "ソース不足時の自動再試行回数：",
         "lbl_auto_retry_delay": "再試行までの遅延：",
@@ -4333,6 +4762,13 @@ TRANSLATIONS = {
             "TCP 接続に適用されます。UDP トラフィック（Kad、Gnutella2 ハブ）は"
             "引き続きプロキシを経由せず直接通信します。"
         ),
+        "lbl_remote_enabled": "リモート操作（Web API）を有効にする：",
+        "lbl_remote_host": "待受アドレス：",
+        "lbl_remote_port": "ポート：",
+        "lbl_remote_token": "アクセストークン：",
+        "btn_remote_generate_token": "生成…",
+        "lbl_remote_note": "このウィンドウを開かずに、ブラウザからダウンロードを管理できます（一時停止、再開、キャンセル、削除、検索、新規追加）——アプリをトレイに最小化した状態での利用を想定しています。専用のトークン（「生成…」ボタン）が必要で、初回にウェブページで入力する必要があります。トークンがないとAPIはすべてのリクエストを拒否します。安全のため、既定の待受アドレスは127.0.0.1（このマシンのみ）です。0.0.0.0に変更するとローカルネットワーク全体にリモート操作を公開します。",
+        "msg_remote_token_required": "リモート操作を有効にする前に、アクセストークンを生成する必要があります。",
         "lbl_max_results": "最大結果数：",
         "lbl_search_timeout": "検索タイムアウト：",
         "spin_unlimited": "無制限（時間のみで制限）",
@@ -4358,6 +4794,11 @@ TRANSLATIONS = {
         "update_dialog_text": "P2P Total の新しいバージョン {version} が利用可能です。\n\nGitHub のダウンロードページを開きますか？",
         "update_dialog_download": "ダウンロード",
         "update_dialog_cancel": "キャンセル",
+        "update_dialog_text_auto": "P2P Total の新しいバージョンがあります: {version}。\n\n今すぐ自動的に更新しますか?",
+        "update_dialog_update_now": "今すぐ更新",
+        "update_downloading": "更新をダウンロード中…",
+        "update_download_failed": "更新をダウンロードできませんでした。GitHub のページから手動でダウンロードしてください。",
+        "update_apply_failed": "更新はダウンロードされましたが、インストールできませんでした。ダウンロードしたファイルから手動でインストールしてください。",
 
         "statusbar_ready": "準備完了",
         "statusbar_connected_count": "{n}/{total} ネットワークに接続中",
@@ -4381,6 +4822,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT ノード",
         "stat_known_peers": "既知のノード",
         "stat_active_transfers": "進行中のダウンロード",
+        "stat_connected_peers": "接続中のピア数",
+        "stat_encrypted_peers": "暗号化されたピア数",
+        "stat_utp_connections": "µTP接続数",
         "stat_shared_files": "共有ファイル",
         "stat_active_uploads": "進行中のアップロード",
         "stat_id_status": "ID の状態",
@@ -4456,6 +4900,14 @@ TRANSLATIONS = {
         "tab_alerts_with_count": "🔔 알림 ({n})",
 
         "search_placeholder": "검색…",
+        "acc_search_query": "검색",
+        "acc_downloads_table": "다운로드 표",
+        "acc_search_results_table": "검색 결과 표",
+        "acc_network_table": "네트워크 상태 표",
+        "acc_chat_message": "채팅 메시지",
+        "acc_chat_users": "채팅방 사용자",
+        "acc_chat_log": "채팅 기록",
+        "acc_hub_filter": "허브 필터",
         "btn_search": "검색",
         "lbl_networks_filter": "검색 대상:",
         "lbl_file_type": "종류:",
@@ -4584,6 +5036,7 @@ TRANSLATIONS = {
         "notify_watch_folder_body": "«{filename}»이(가) 다운로드에 추가되었습니다.",
         "notify_watch_folder_error_body": "«{filename}»을(를) 추가할 수 없습니다: {error}",
         "chk_auto_verify": "다운로드가 완료되면 콘텐츠를 자동으로 검증",
+        "chk_auto_connect": "시작 시 자동으로 연결",
         "auto_verify_tooltip": (
             "다운로드가 완료되면 디스크에 있는 데이터가 참조 해시와 "
             "일치하는지 확인합니다 (지원하는 네트워크에서만 가능하며, "
@@ -4635,6 +5088,7 @@ TRANSLATIONS = {
         "settings_tab_gnutella2": "Gnutella2",
         "settings_tab_emule": "eMule / Kad",
         "settings_tab_proxy": "프록시",
+        "settings_tab_remote": "원격 제어",
         "lbl_download_dir": "다운로드 폴더:",
         "lbl_shared_folder": "공유 폴더:",
         "btn_add_folder": "폴더 추가…",
@@ -4649,6 +5103,11 @@ TRANSLATIONS = {
         "theme_light": "라이트",
         "lbl_global_download_limit": "전체 다운로드 제한:",
         "lbl_global_upload_limit": "전체 업로드 제한:",
+        "chk_schedule_enabled": "지정한 시간대에 대체 제한 적용",
+        "lbl_schedule_time_range": "시간대:",
+        "lbl_schedule_download_limit": "해당 시간대 다운로드 제한:",
+        "lbl_schedule_upload_limit": "해당 시간대 업로드 제한:",
+        "schedule_tooltip": "이 시간대에는 일반 전체 제한 대신 위의 제한이 적용됩니다. 종료 시각이 시작 시각보다 이르면 시간대가 자정을 넘깁니다(예: 23:00~07:00).",
         "spin_unlimited_speed": "무제한",
         "lbl_auto_retry_attempts": "소스가 없을 때 자동 재시도 횟수:",
         "lbl_auto_retry_delay": "재시도 간격:",
@@ -4697,6 +5156,18 @@ TRANSLATIONS = {
             "TCP 연결에 적용됩니다. UDP 트래픽(Kad, Gnutella2 허브)은 "
             "프록시를 거치지 않고 계속 직접 통신합니다."
         ),
+        "lbl_remote_enabled": "원격 제어 활성화(웹 API):",
+        "lbl_remote_host": "수신 주소:",
+        "lbl_remote_port": "포트:",
+        "lbl_remote_token": "액세스 토큰:",
+        "btn_remote_generate_token": "생성…",
+        "lbl_remote_note": (
+            "이 창을 열지 않고도 브라우저에서 다운로드를 관리할 수 있습니다(일시정지, 재개, 취소, 삭제, 검색 및 새 다운로드 추가) — "
+            "애플리케이션을 트레이로 최소화한 상태로 사용하도록 만들어졌습니다. 전용 토큰(「생성…」 버튼)이 필요하며, 처음에는 웹 페이지에 입력해야 "
+            "합니다. 토큰이 없으면 API가 모든 요청을 거부합니다. 보안을 위해 기본 수신 주소는 127.0.0.1(이 컴퓨터)뿐입니다. "
+            "0.0.0.0으로 바꾸면 원격 제어가 로컬 네트워크 전체에 노출됩니다."
+        ),
+        "msg_remote_token_required": "원격 제어를 활성화하려면 먼저 액세스 토큰을 생성해야 합니다.",
         "lbl_max_results": "최대 검색 결과 수:",
         "lbl_search_timeout": "검색 제한 시간:",
         "spin_unlimited": "무제한 (시간으로만 제한)",
@@ -4722,6 +5193,11 @@ TRANSLATIONS = {
         "update_dialog_text": "P2P Total의 새 버전 {version}을(를) 사용할 수 있습니다.\n\nGitHub 다운로드 페이지로 이동하시겠습니까?",
         "update_dialog_download": "다운로드",
         "update_dialog_cancel": "취소",
+        "update_dialog_text_auto": "P2P Total의 새 버전을 사용할 수 있습니다: {version}.\n\n지금 자동으로 업데이트하시겠습니까?",
+        "update_dialog_update_now": "지금 업데이트",
+        "update_downloading": "업데이트 다운로드 중…",
+        "update_download_failed": "업데이트를 다운로드할 수 없습니다. GitHub 페이지에서 수동으로 다운로드해 보세요.",
+        "update_apply_failed": "업데이트가 다운로드되었지만 설치할 수 없습니다. 다운로드한 파일에서 수동으로 설치해 보세요.",
 
         "statusbar_ready": "준비됨",
         "statusbar_connected_count": "{n}/{total}개 네트워크 연결됨",
@@ -4745,6 +5221,9 @@ TRANSLATIONS = {
         "stat_dht_nodes": "DHT 노드",
         "stat_known_peers": "알려진 노드",
         "stat_active_transfers": "활성 전송",
+        "stat_connected_peers": "연결된 피어",
+        "stat_encrypted_peers": "암호화된 피어",
+        "stat_utp_connections": "µTP 연결",
         "stat_shared_files": "공유 파일",
         "stat_active_uploads": "활성 업로드",
         "stat_id_status": "ID 상태",
@@ -4789,6 +5268,14 @@ def t(key: str, **kwargs) -> str:
     """Devuelve el texto traducido para 'key' en el idioma activo.
     Si falta en el idioma activo, cae a español; si tampoco existe,
     devuelve la propia clave. Acepta kwargs para .format()."""
-    table = TRANSLATIONS.get(_current_language, TRANSLATIONS["es"])
+    return t_in(_current_language, key, **kwargs)
+
+
+def t_in(language: str, key: str, **kwargs) -> str:
+    """Igual que `t()`, pero en un idioma concreto en vez del activo --
+    para mensajes que hay que mostrar ya en el idioma recién elegido
+    (p.ej. el aviso de reinicio tras cambiar de idioma en Preferencias),
+    antes de que el cambio se aplique de verdad en el próximo arranque."""
+    table = TRANSLATIONS.get(language, TRANSLATIONS["es"])
     text = table.get(key, TRANSLATIONS["es"].get(key, key))
     return text.format(**kwargs) if kwargs else text
