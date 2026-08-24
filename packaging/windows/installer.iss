@@ -6,7 +6,7 @@
 ; ..\..\dist y ..\..\packaging apunten bien).
 
 #define MyAppName "P2P Total"
-#define MyAppVersion "1.0"
+#define MyAppVersion "1.0.1"
 #define MyAppPublisher "AnabasaSoft"
 #define MyAppURL "https://github.com/AnabasaSoft/P2P-Total"
 #define MyAppExeName "p2p-total.exe"

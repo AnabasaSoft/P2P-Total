@@ -11,10 +11,12 @@
 # añaden como datos para que `gui/resources.py` los encuentre vía
 # `sys._MEIPASS`, que PyInstaller define igual en build onefile y onedir.
 
+import os
 import sys
 from pathlib import Path
 
 ROOT = Path(SPECPATH).resolve().parent
+BUNDLE_VERSION = os.environ.get("VERSION", "0.0.0-dev")
 
 datas = [
     (str(ROOT / "IconoCuadrado.png"), "."),
@@ -72,8 +74,8 @@ if sys.platform == "darwin":
         icon=icon,
         bundle_identifier="org.anabasasoft.p2ptotal",
         info_plist={
-            "CFBundleShortVersionString": "1.0",
-            "CFBundleVersion": "1.0",
+            "CFBundleShortVersionString": BUNDLE_VERSION,
+            "CFBundleVersion": BUNDLE_VERSION,
             "NSHighResolutionCapable": True,
             "NSHumanReadableCopyright": "AnabasaSoft",
         },

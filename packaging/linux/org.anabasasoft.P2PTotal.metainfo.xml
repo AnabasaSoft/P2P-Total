@@ -28,7 +28,8 @@
     <binary>p2p-total</binary>
   </provides>
   <releases>
-    <release version="1.0" date="2026-08-22"/>
+    <release version="1.0.1" date="2026-08-24"/>
+    <release version="1.0.0" date="2026-08-23"/>
   </releases>
   <content_rating type="oars-1.1" />
 </component>

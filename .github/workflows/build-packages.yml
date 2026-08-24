@@ -54,6 +54,8 @@ jobs:
       - name: Instalar dependencias Python
         run: |
           pip install -r requirements.txt pyinstaller
+      - name: Fijar la versión en core/version.py
+        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
       - name: Construir build PyInstaller (onedir)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Instalar fpm
@@ -90,6 +92,8 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Instalar dependencias Python
         run: pip install -r requirements.txt pyinstaller
+      - name: Fijar la versión en core/version.py
+        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
       - name: Construir build PyInstaller (onedir)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Instalar flatpak y flatpak-builder
@@ -120,6 +124,9 @@ jobs:
       - name: Instalar dependencias Python
         shell: bash
         run: pip install -r requirements.txt pyinstaller
+      - name: Fijar la versión en core/version.py
+        shell: bash
+        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
       - name: Construir build PyInstaller (onedir)
         shell: bash
         run: pyinstaller packaging/p2p-total.spec --noconfirm
@@ -128,7 +135,7 @@ jobs:
       - name: Compilar el instalador
         shell: bash
         run: |
-          sed -i "s/#define MyAppVersion \"1.0\"/#define MyAppVersion \"$VERSION\"/" packaging/windows/installer.iss
+          sed -i "s/#define MyAppVersion \".*\"/#define MyAppVersion \"$VERSION\"/" packaging/windows/installer.iss
           "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" packaging/windows/installer.iss
       - uses: actions/upload-artifact@v4
         with:
@@ -147,6 +154,8 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - name: Instalar dependencias Python
         run: pip install -r requirements.txt pyinstaller
+      - name: Fijar la versión en core/version.py
+        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
       - name: Construir build PyInstaller (.app)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Empaquetar el .dmg

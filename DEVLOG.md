@@ -4715,3 +4715,141 @@ Validado:
   directorio temporal propio (con `tmp_path_factory`, no `tmp_path`,
   precisamente para no anidarla dentro de la carpeta que un test use
   como carpeta compartida a escanear).
+
+### Release v1.1: publicación con los paquetes adjuntos, tras un fallo de CI diagnosticado en vivo
+
+Con el commit `06e67214` ("Hash arreglado en segundo plano y otros
+adds") ya en `main`, tocaba publicar la siguiente release con el punto
+34 completo (34.1-34.7) y el arreglo de hasheo en segundo plano de
+eMule. El primer intento del usuario de etiquetar y publicar la
+release tuvo un fallo real, investigado y corregido en esta sesión:
+
+- **Diagnóstico**: `gh run view` sobre la ejecución fallida del
+  workflow `Construir paquetes` (disparado al empujar el tag) mostró
+  que los 4 jobs de compilación (`linux-packages`, `linux-flatpak`,
+  `windows-installer`, `macos-dmg`) habían terminado bien — el único
+  job en rojo era `release`, con el log de error `a release with the
+  same tag name already exists: v1.2`. Causa raíz: el usuario había
+  creado a mano, con `gh release create`, una release para ese mismo
+  tag (con las notas en español ya redactadas pero sin paquetes)
+  mientras el workflow de CI compilaba en paralelo; cuando el job
+  `release` del propio workflow terminó de compilar y llegó a su paso
+  final de `gh release create --generate-notes` (que adjunta los 6
+  artefactos), chocó con la release manual ya existente y falló, sin
+  llegar a adjuntar ningún paquete a ningún sitio.
+- **Corrección**: en vez de repetir el mismo problema con un tag `v1.2`
+  nuevo, se reutilizó el tag `v1.1` (que ya existía sin release
+  asociada, de un intento previo fallido del usuario) siguiendo estos
+  pasos: (1) borrar la release `v1.2` fallida y su tag
+  (`gh release delete v1.2 --yes --cleanup-tag`); (2) borrar cualquier
+  release manual ya creada sobre `v1.1`; (3) borrar y volver a empujar
+  el tag `v1.1` en el remoto (`git push origin :refs/tags/v1.1` seguido
+  de `git push origin v1.1` — necesario porque un `git push` de un tag
+  que ya apunta al mismo commit no genera ningún evento nuevo y no
+  dispara el workflow) para que fuese el propio workflow, sin
+  intervención manual paralela, quien creara la release y adjuntara
+  los 6 paquetes; (4) una vez publicada por el workflow (con notas
+  autogeneradas por `--generate-notes`), sustituir solo el cuerpo de
+  las notas por el texto en español ya redactado con
+  `gh release edit v1.1 --notes-file ...`, sin tocar los assets ya
+  adjuntos.
+- **Resultado validado**: release
+  [v1.1](https://github.com/AnabasaSoft/P2P-Total/releases/tag/v1.1)
+  publicada con los 6 paquetes (`p2p-total-1.1-1.x86_64.rpm`,
+  `P2P-Total-1.1-x86_64.AppImage`, `P2P-Total-1.1-x86_64.flatpak`,
+  `P2P-Total-1.1.dmg`, `P2P-Total-Setup-1.1.exe`,
+  `p2p-total_1.1_amd64.deb`), igual que la v1.0, con notas en español
+  cubriendo el punto 34 completo (34.1-34.7) y el arreglo de hasheo en
+  segundo plano.
+- **Lección para próximas releases**: no crear la release a mano con
+  `gh release create` sobre un tag recién empujado si el workflow de
+  CI va a intentar crear su propia release para ese mismo tag —
+  esperar a que el job `release` del workflow termine (o falle) antes
+  de tocar nada manualmente sobre esa release, y si hace falta texto
+  de notas distinto al autogenerado, aplicarlo después con
+  `gh release edit --notes-file` una vez el workflow ya haya adjuntado
+  los paquetes.
+
+Para que este problema no se pueda repetir (a petición explícita del
+usuario: "actualiza actualiza.sh para que cree la tag y la release
+automáticamente y no volver a tener estos problemas"), se amplió
+`actualiza.sh` (antes solo `git add` + `git commit` + `git push`) para
+que, tras subir el commit, calcule la siguiente versión consecutiva
+(incrementa el número menor del último tag `vX.Y` existente en el
+repo, o admite `--version X.Y` para forzar una versión concreta),
+cree y empuje ese tag nuevo, y espere con `gh run watch` a que el
+workflow `Construir paquetes` termine, confirmando al final la URL de
+la release ya publicada con los 6 paquetes. Por diseño, el script
+**nunca** llama a `gh release create`: solo crea el tag, dejando que
+sea el propio workflow de CI quien cree la release al terminar de
+compilar — precisamente la causa raíz del fallo de la v1.2 fue que una
+release manual y la del workflow chocaban por el mismo nombre de tag,
+así que evitar esa duplicidad es lo que resuelve el problema de raíz
+en vez de solo evitar repetir los pasos manuales.
+
+### Arreglo: la aplicación empaquetada nunca supo su propia versión real
+
+A raíz de renumerar las releases a versionado semántico (`v1.0.0`,
+`v1.0.1`... a petición del usuario), se auditó todo el pipeline de
+versión y se encontró que la aplicación empaquetada llevaba **desde
+siempre** un bug de fondo, no causado por el cambio de numeración sino
+solo hecho más visible por él: `core/version.py` (`VERSION`, usada por
+el diálogo "Acerca de" y por `core/update_checker.py` para comparar
+contra el último tag publicado en GitHub) nunca se actualizaba al
+compilar los paquetes — ninguno de los 4 jobs de compilación del
+workflow (`linux-packages`, `linux-flatpak`, `windows-installer`,
+`macos-dmg`) tocaba ese fichero antes de invocar a PyInstaller, así
+que todo paquete publicado hasta ahora, fuese cual fuese su tag real,
+llevaba dentro un binario que se creía permanentemente en la versión
+"1.0" — lo que además rompía la comprobación de actualizaciones
+(`_parse_version("1.0") < _parse_version("v1.0.1")` siempre verdadero,
+así que la app se habría creído desactualizada para siempre nada más
+instalarse, incluso recién instalada la última versión).
+
+Se encontró además un segundo bug real relacionado, esta vez sí
+introducido por el cambio de esquema: el paso de Windows que fija la
+versión del instalador hacía `sed -i "s/...MyAppVersion \"1.0\".../"`
+con el "1.0" antiguo escrito a fuego en el patrón — al pasar el
+placeholder del repo a `"1.0.1"`, ese `sed` habría dejado de encontrar
+ninguna coincidencia y el instalador de Windows se habría seguido
+compilando con la versión equivocada en el nombre de fichero/registro
+de Windows, en silencio (sin error visible, `sed` no falla si no
+encuentra el patrón).
+
+Cambios:
+- `.github/workflows/build-packages.yml`: nuevo paso "Fijar la versión
+  en core/version.py" en los 4 jobs de compilación, justo antes de
+  invocar a PyInstaller, con
+  `sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py`
+  — inyecta la versión real (derivada del tag por el job `version`) en
+  el binario que de verdad se va a distribuir, sin depender de que el
+  fichero del repo esté sincronizado a mano.
+- El `sed` del instalador de Windows (`packaging/windows/installer.iss`)
+  se hizo genérico (`\".*\"` en vez del literal `\"1.0\"`), para que
+  siga funcionando pase lo que pase con el valor por defecto del
+  fichero.
+- `packaging/p2p-total.spec`: el `BUNDLE` de macOS (claves
+  `CFBundleShortVersionString`/`CFBundleVersion` del `Info.plist`,
+  hasta ahora también fijas a `"1.0"`) ahora lee la versión real de la
+  variable de entorno `VERSION` (`os.environ.get("VERSION",
+  "0.0.0-dev")`), la misma que ya reciben el resto de scripts de
+  empaquetado.
+- `core/version.py` (valor por defecto en el repo, para cuando se
+  ejecuta desde código fuente sin pasar por el pipeline de CI) y
+  `packaging/windows/installer.iss` (placeholder): actualizados de
+  `"1.0"` a `"1.0.1"`, la última versión realmente publicada.
+- `packaging/linux/org.anabasasoft.P2PTotal.metainfo.xml`: añadidas
+  las entradas de `1.0.0` y `1.0.1` a `<releases>` (metadato estático
+  de AppStream que usan los centros de software, no leído por la app
+  en tiempo de ejecución, pero que había quedado desactualizado).
+
+Validado: `python3 -c "import yaml; yaml.safe_load(...)"` confirma que
+el workflow sigue siendo YAML válido tras los cambios, y se replicó a
+mano el `sed` de ambos ficheros (`core/version.py` e
+`installer.iss`) contra un fichero de prueba con `VERSION` exportado
+como variable de entorno (igual que lo expone GitHub Actions a cada
+paso de un job), confirmando la sustitución correcta en ambos casos.
+Queda pendiente de validación en real la próxima vez que
+`actualiza.sh` dispare una release nueva: el diálogo "Acerca de" y la
+comprobación de actualizaciones de esos paquetes deberían mostrar ya
+la versión real del tag en vez de "1.0".
