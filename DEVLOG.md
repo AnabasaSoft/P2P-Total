@@ -4853,3 +4853,33 @@ Queda pendiente de validación en real la próxima vez que
 `actualiza.sh` dispare una release nueva: el diálogo "Acerca de" y la
 comprobación de actualizaciones de esos paquetes deberían mostrar ya
 la versión real del tag en vez de "1.0".
+
+**Corrección tras la primera validación en real**: al ejecutar
+`./actualiza.sh` con este mismo arreglo (tag `v1.0.2`), el job
+`macos-dmg` falló justo en el nuevo paso "Fijar la versión en
+core/version.py", con el error `sed: 1: "core/version.py": command c
+expects \ followed by text` — mientras que los otros 3 jobs
+(`linux-packages`, `linux-flatpak`, `windows-installer`) lo pasaron
+sin problema. Causa: los runners de `macos-latest` traen **BSD `sed`**
+de serie, no GNU `sed` — su flag `-i` exige un argumento de sufijo de
+backup inmediatamente después (aunque sea vacío, `-i ''`), así que
+`sed -i "script" fichero` en BSD interpreta `"script"` como ese
+sufijo y `fichero` (con el patrón de sustitución dentro) como el
+script de `sed` en sí, que no es sintaxis válida. En Linux (bash) y en
+Windows (bash de MSYS que trae Git for Windows) `sed` sí es GNU sed,
+por eso ahí funcionaba igual. Arreglo: en vez de perseguir la sintaxis
+compatible con ambos `sed`, se sustituyó por
+`packaging/set_version.py` (nuevo, Python puro, idéntico en los 4
+sistemas operativos porque Python ya es una dependencia garantizada
+del pipeline vía `actions/setup-python`) y se cambiaron los 4 pasos
+"Fijar la versión en core/version.py" del workflow a
+`python packaging/set_version.py "$VERSION"`. El `sed` de
+`installer.iss` (que solo corre en el job de Windows, sobre GNU sed)
+se dejó tal cual, ya validado en real. Probado en local: el script
+sustituye correctamente `VERSION = "1.0.1"` por
+`VERSION = "9.9.9"` y viceversa. Como el job `release` necesita que
+los 4 jobs de compilación terminen bien, esta ejecución (`v1.0.2`) no
+llegó a publicar ninguna release (sin paquetes que perder, ninguno se
+llegó a compilar del todo) — se borró el tag `v1.0.2` (local y
+remoto) al no tener release asociada, dejando limpio el siguiente
+intento (`v1.0.3`) para revalidar el arreglo completo.

@@ -55,7 +55,7 @@ jobs:
         run: |
           pip install -r requirements.txt pyinstaller
       - name: Fijar la versión en core/version.py
-        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
+        run: python packaging/set_version.py "$VERSION"
       - name: Construir build PyInstaller (onedir)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Instalar fpm
@@ -93,7 +93,7 @@ jobs:
       - name: Instalar dependencias Python
         run: pip install -r requirements.txt pyinstaller
       - name: Fijar la versión en core/version.py
-        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
+        run: python packaging/set_version.py "$VERSION"
       - name: Construir build PyInstaller (onedir)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Instalar flatpak y flatpak-builder
@@ -126,7 +126,7 @@ jobs:
         run: pip install -r requirements.txt pyinstaller
       - name: Fijar la versión en core/version.py
         shell: bash
-        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
+        run: python packaging/set_version.py "$VERSION"
       - name: Construir build PyInstaller (onedir)
         shell: bash
         run: pyinstaller packaging/p2p-total.spec --noconfirm
@@ -155,7 +155,7 @@ jobs:
       - name: Instalar dependencias Python
         run: pip install -r requirements.txt pyinstaller
       - name: Fijar la versión en core/version.py
-        run: sed -i "s/^VERSION = \".*\"/VERSION = \"$VERSION\"/" core/version.py
+        run: python packaging/set_version.py "$VERSION"
       - name: Construir build PyInstaller (.app)
         run: pyinstaller packaging/p2p-total.spec --noconfirm
       - name: Empaquetar el .dmg
