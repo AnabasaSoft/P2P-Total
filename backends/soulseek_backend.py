@@ -363,6 +363,11 @@ class SoulseekBackend(NetworkBackend):
         self._shared_library = shared_library
         self._proxy = proxy
         self._active_uploads = 0
+        # IP externa tal como la ve el propio servidor de Soulseek, leída
+        # de la respuesta de login (ver connect()) — útil para detectar
+        # NAT/redirección de puerto desde la pestaña Red sin depender de
+        # un servicio externo de "cuál es mi IP".
+        self._external_ip: str | None = None
 
         self._server: _FramedConnection | None = None
         self._server_task: asyncio.Task | None = None
@@ -461,6 +466,20 @@ class SoulseekBackend(NetworkBackend):
             reason = up.string()
             conn.close()
             raise ConnectionError(f"Login de Soulseek rechazado: {reason}")
+
+        # Tras el booleano de éxito, el servidor manda un mensaje de
+        # bienvenida (MOTD, que no usamos) y luego nuestra propia IP
+        # externa tal como la ve él -el campo real del protocolo, no una
+        # invención-. Se descarta en silencio si el formato no encaja (p.
+        # ej. una versión de servidor que cambiara el mensaje): no es
+        # crítico para el login, solo un dato informativo de más.
+        try:
+            up.string()
+            external_ip = up.ip()
+            if external_ip.count(".") == 3:
+                self._external_ip = external_ip
+        except (struct.error, IndexError):
+            pass
 
         self._listen_server = await asyncio.start_server(
             self._handle_incoming_connection, "0.0.0.0", self._listen_port,
@@ -767,6 +786,8 @@ class SoulseekBackend(NetworkBackend):
             "listen_port": self._listen_port,
             "active_transfers": len(self._active),
         }
+        if self._external_ip is not None:
+            stats["external_ip"] = self._external_ip
         if self._shared_library is not None and self._shared_library.enabled:
             stats["shared_files"] = len(self._shared_library.list_files())
             stats["active_uploads"] = self._active_uploads

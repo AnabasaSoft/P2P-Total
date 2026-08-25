@@ -244,6 +244,13 @@ class DCPPBackend(NetworkBackend):
         # chat de hub (punto 14 del backlog): callback de eventos, ver
         # subscribe_chat()
         self._chat_callback: Callable[[dict], None] | None = None
+        # Nombre del hub ($HubName) y usuarios conectados vistos en el
+        # propio hub -para la pestaña Red (punto 35 del backlog). El
+        # recuento de usuarios se inicializa con el $NickList/$OpList que
+        # manda el hub justo tras el login y se mantiene al día con los
+        # $Hello/$Quit de altas y bajas durante la sesión.
+        self._hub_name: str | None = None
+        self._hub_users: set[str] = set()
 
     async def connect_to_hub(self, host: str, port: int = 411, password: str | None = None,
                               timeout: float = 15.0, debug: bool = False) -> None:
@@ -287,6 +294,10 @@ class DCPPBackend(NetworkBackend):
             if msg == "$BadPass":
                 conn.close()
                 raise ConnectionError("Contraseña incorrecta para este hub")
+            if msg.startswith("$HubName "):
+                self._hub_name = msg[len("$HubName "):]
+            if msg.startswith("$NickList ") or msg.startswith("$OpList "):
+                self._parse_nick_list(msg)
             if msg.startswith(f"$Hello {self._nickname}"):
                 break
 
@@ -593,6 +604,10 @@ class DCPPBackend(NetworkBackend):
             "listen_port": self._listen_port,
             "active_transfers": len(self._active),
         }
+        if self._hub_name is not None:
+            stats["hub_name"] = self._hub_name
+        if self._hub_users:
+            stats["hub_users"] = len(self._hub_users)
         if self._shared_library is not None and self._shared_library.enabled:
             stats["shared_files"] = len(self._shared_library.list_files())
             stats["active_uploads"] = self._active_uploads
@@ -665,8 +680,25 @@ class DCPPBackend(NetworkBackend):
                     self._handle_incoming_private_message(msg[len("$To: "):])
                 elif msg.startswith("<"):
                     self._handle_incoming_room_message(msg)
+                elif msg.startswith("$HubName "):
+                    self._hub_name = msg[len("$HubName "):]
+                elif msg.startswith("$NickList ") or msg.startswith("$OpList "):
+                    self._parse_nick_list(msg)
+                elif msg.startswith("$Hello "):
+                    self._hub_users.add(msg[len("$Hello "):])
+                elif msg.startswith("$Quit "):
+                    self._hub_users.discard(msg[len("$Quit "):])
         except (asyncio.CancelledError, asyncio.IncompleteReadError, ConnectionError):
             pass
+
+    def _parse_nick_list(self, msg: str) -> None:
+        """Parsea `$NickList nick1$$nick2$$...$$` (o el `$OpList`
+        equivalente, mismo formato, solo un subconjunto de operadores) y
+        añade cada nick al recuento de usuarios del hub -no lo sustituye,
+        para no perder altas ya vistas por `$Hello` si el hub manda
+        ambos mensajes en cualquier orden."""
+        body = msg.split(" ", 1)[1] if " " in msg else ""
+        self._hub_users.update(nick for nick in body.split("$") if nick)
 
     def _handle_incoming_room_message(self, msg: str) -> None:
         """Chat público del hub: el propio hub reenvía a todos los

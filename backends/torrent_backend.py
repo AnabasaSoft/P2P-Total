@@ -538,6 +538,30 @@ class TorrentBackend(NetworkBackend):
             for i in range(files.num_files())
         ]
 
+    def list_trackers(self, download: Download) -> list[dict] | None:
+        """Estado de cada tracker del torrent (punto 35 del backlog, para
+        la pestaña Red): URL, si está funcionando (respondió bien al
+        último anuncio), su último mensaje de error/estado y los
+        seeds/peers que reportó en el último scrape. `None` si no hay
+        descarga activa con ese info_hash."""
+        entry = self._find_entry(download)
+        if entry is None:
+            return None
+        # handle.trackers() devuelve dicts (no objetos announce_entry
+        # navegables con atributos), pese a que la clase lt.announce_entry
+        # sí expone esos campos como propiedades/métodos -es la propia
+        # librería la que serializa así, no una elección nuestra.
+        return [
+            {
+                "url": t["url"],
+                "working": t["fails"] == 0,
+                "message": t["message"],
+                "seeds": t["scrape_complete"],
+                "peers": t["scrape_incomplete"],
+            }
+            for t in entry["handle"].trackers()
+        ]
+
     def set_file_priorities(self, download: Download, priorities: dict[int, int]) -> None:
         entry = self._find_entry(download)
         if entry is None:

@@ -16,6 +16,7 @@ from backends.torrent_backend import (
     _is_torrent_file,
     _to_magnet,
 )
+from core.models import Download, DownloadState, Network
 
 _INFOHASH = "0123456789abcdef0123456789abcdef01234567"[:40]
 
@@ -118,3 +119,39 @@ async def test_get_stats_reports_peer_encryption_and_utp_counters():
 def test_get_stats_empty_dict_when_not_connected():
     backend = TorrentBackend()
     assert backend.get_stats() == {}
+
+
+@pytest.mark.asyncio
+async def test_list_trackers_reports_url_from_magnet(tmp_path):
+    """Punto 35: aunque no haya habido ningún anuncio real todavía
+    (sesión local, sin red), libtorrent ya expone en trackers() la URL
+    de cada tracker declarado en el magnet -es lo mínimo que la
+    subpestaña de BitTorrent puede mostrar sin depender de tráfico
+    real, que se valida a mano por CLI como el resto del proyecto."""
+    backend = TorrentBackend()
+    await backend.connect()
+    try:
+        magnet = _build_magnet(_INFOHASH, "Mi Archivo")
+        download = Download(
+            id=None,
+            network=Network.TORRENT,
+            title="Mi Archivo",
+            source_id=magnet,
+            dest_path=str(tmp_path),
+        )
+        await backend.reattach_download(download)
+        trackers = backend.list_trackers(download)
+        assert trackers is not None
+        assert any("tracker" in t["url"] for t in trackers)
+        assert all({"url", "working", "message", "seeds", "peers"} <= t.keys() for t in trackers)
+    finally:
+        await backend.disconnect()
+
+
+def test_list_trackers_none_when_no_active_download():
+    backend = TorrentBackend()
+    download = Download(
+        id=None, network=Network.TORRENT, title="x",
+        source_id="magnet:?xt=urn:btih:" + _INFOHASH, dest_path="/tmp",
+    )
+    assert backend.list_trackers(download) is None

@@ -2,6 +2,7 @@
 protocolo NMDC (sin abrir ningún socket)."""
 
 from backends.dcpp_backend import (
+    DCPPBackend,
     escape_nmdc,
     lock_to_key,
     parse_dchub_link,
@@ -98,3 +99,37 @@ def test_parse_dchub_link_rejects_other_schemes():
 
 def test_parse_dchub_link_rejects_empty_address():
     assert parse_dchub_link("dchub://") is None
+
+
+def test_parse_nick_list_splits_on_double_dollar():
+    backend = DCPPBackend(nickname="yo")
+    backend._parse_nick_list("$NickList nick1$$nick2$$nick3$$")
+    assert backend._hub_users == {"nick1", "nick2", "nick3"}
+
+
+def test_parse_nick_list_accumulates_across_calls():
+    # $NickList y $OpList pueden llegar por separado (el segundo es un
+    # subconjunto de operadores) y no deben pisarse entre sí ni perder
+    # altas ya vistas por $Hello.
+    backend = DCPPBackend(nickname="yo")
+    backend._hub_users.add("previo")
+    backend._parse_nick_list("$OpList admin$$")
+    assert backend._hub_users == {"previo", "admin"}
+
+
+def test_hub_name_and_user_count_exposed_in_get_stats():
+    backend = DCPPBackend(nickname="yo", listen_port=1234)
+    backend._hub_name = "Mi Hub"
+    backend._hub_users = {"a", "b"}
+
+    class _FakeWriter:
+        def get_extra_info(self, _key):
+            return ("1.2.3.4", 411)
+
+    class _FakeHub:
+        writer = _FakeWriter()
+
+    backend._hub = _FakeHub()
+    stats = backend.get_stats()
+    assert stats["hub_name"] == "Mi Hub"
+    assert stats["hub_users"] == 2

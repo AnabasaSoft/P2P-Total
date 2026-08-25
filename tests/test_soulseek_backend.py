@@ -58,6 +58,18 @@ def test_unpacker_ip_reverses_byte_order():
     assert up.ip() == "4.3.2.1"
 
 
+def test_unpacker_login_success_reply_sequence():
+    # Formato real de la respuesta de login con éxito: booleano, mensaje
+    # de bienvenida (MOTD) y la IP externa propia tal como la ve el
+    # servidor -la secuencia que lee SoulseekBackend.connect() tras el
+    # booleano de éxito para rellenar get_stats()["external_ip"].
+    data = pack_bool(True) + pack_string("bienvenido") + bytes([1, 2, 3, 4])
+    up = _Unpacker(data)
+    assert up.boolean() is True
+    assert up.string() == "bienvenido"
+    assert up.ip() == "4.3.2.1"
+
+
 def test_unpacker_file_size_normal():
     up = _Unpacker((5_000_000_000).to_bytes(8, "little"))
     assert up.file_size() == 5_000_000_000

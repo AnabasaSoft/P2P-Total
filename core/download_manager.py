@@ -243,6 +243,25 @@ class DownloadManager:
         backend = BackendRegistry.get(download.network)
         return backend.list_files(download) if backend is not None else None
 
+    def list_active_torrent_trackers(self) -> list[dict]:
+        """Estado de los trackers de todas las descargas BitTorrent
+        activas (subpestaña de Red, punto 35 del backlog): una entrada
+        por tracker con el título del torrent al que pertenece, para
+        poder mostrarlos todos juntos en una sola tabla."""
+        backend = BackendRegistry.get(Network.TORRENT)
+        if backend is None:
+            return []
+        entries = []
+        for download in database.load_all_downloads():
+            if download.network != Network.TORRENT or download.state not in _ACTIVE_STATES:
+                continue
+            trackers = backend.list_trackers(download)
+            if not trackers:
+                continue
+            for tracker in trackers:
+                entries.append({"title": download.title, **tracker})
+        return entries
+
     def set_file_priorities(self, download: Download, priorities: dict[int, int]) -> None:
         backend = BackendRegistry.get(download.network)
         if backend is not None:

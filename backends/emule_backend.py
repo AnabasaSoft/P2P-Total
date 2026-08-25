@@ -1063,6 +1063,10 @@ class EMuleBackend(NetworkBackend):
         self._client_id = 0
         self._server_host: str | None = None
         self._server_port: int | None = None
+        # Usuarios/ficheros anunciados por el servidor eD2k vía
+        # OP_SERVERSTATUS -para la pestaña Red (punto 35 del backlog).
+        self._server_users: int | None = None
+        self._server_files: int | None = None
 
         self._tcp_server: asyncio.AbstractServer | None = None
         self._udp_transport: asyncio.DatagramTransport | None = None
@@ -1199,6 +1203,8 @@ class EMuleBackend(NetworkBackend):
             if opcode == OP_SERVERMESSAGE and debug:
                 msglen = struct.unpack_from("<H", payload, 0)[0]
                 print(f"  [debug] mensaje del servidor: {payload[2:2 + msglen].decode('utf-8', errors='replace')!r}")
+            if opcode == OP_SERVERSTATUS:
+                self._on_server_status(payload)
 
         if not logged_in:
             writer.close()
@@ -1276,6 +1282,8 @@ class EMuleBackend(NetworkBackend):
                     self._client_id = struct.unpack_from("<I", payload, 0)[0]
                 elif opcode == OP_SERVERLIST:
                     self._on_server_list(payload)
+                elif opcode == OP_SERVERSTATUS:
+                    self._on_server_status(payload)
                 elif opcode == OP_CALLBACKREQUESTED:
                     asyncio.ensure_future(self._serve_via_callback(payload))
         except (asyncio.CancelledError, asyncio.IncompleteReadError, ConnectionError, OSError):
@@ -1298,6 +1306,16 @@ class EMuleBackend(NetworkBackend):
             port = struct.unpack_from("<H", payload, offset)[0]
             offset += 2
             self._discovered_servers.add((ip, port))
+
+    def _on_server_status(self, payload: bytes) -> None:
+        """OP_SERVERSTATUS (ServerSocket.cpp::ProcessPacket, case
+        OP_SERVERSTATUS): nUsers(uint32) + nFiles(uint32) -el número de
+        usuarios y ficheros anunciados por el propio servidor eD2k, que
+        el servidor va reenviando de vez en cuando durante la sesión
+        (no solo al login). Para la pestaña Red (punto 35 del backlog)."""
+        if len(payload) < 8:
+            return
+        self._server_users, self._server_files = struct.unpack_from("<II", payload, 0)
 
     # -- Kad ------------------------------------------------------------
 
@@ -2253,6 +2271,9 @@ class EMuleBackend(NetworkBackend):
         }
         if self._server_writer is not None:
             stats["id_status"] = "high" if self.is_high_id else "low"
+        if self._server_users is not None:
+            stats["server_users"] = self._server_users
+            stats["server_files"] = self._server_files
         if self._kad_firewalled is not None:
             stats["kad_firewalled"] = "firewalled" if self._kad_firewalled else "open"
         if self._shared_library is not None and self._shared_library.enabled:

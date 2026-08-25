@@ -4496,7 +4496,7 @@ búsqueda/descarga; falta la parte social):
     Con 34.7 se completan todos los sub-puntos de la lista (34.1-34.7):
     el punto 34 queda cerrado.
 
-35. Pestaña "Red" con subpestañas por servidor/red, con toda la
+35. ✅ Pestaña "Red" con subpestañas por servidor/red, con toda la
     información posible según el protocolo de cada una (añadido
     2026-08-25, a petición explícita del usuario: "creo que añadir
     subpestañas en la pestaña de red, con una pestaña por servidor que
@@ -4550,8 +4550,114 @@ búsqueda/descarga; falta la parte social):
       despachador de mensajes — solo se usa `OP_SERVERMESSAGE` para un
       `print` de depuración).
 
-    Pendiente de implementar, siguiente en orden estricto tras
-    cerrarse el punto 34.
+    Completo (ver "Punto 35 del backlog: subpestañas por red en la
+    pestaña Red" en "Estado actual" para el detalle completo de la
+    implementación y su validación).
+
+### Punto 35 del backlog: subpestañas por red en la pestaña Red
+
+Implementado backend por backend según el ámbito fijado al proponer el
+punto, sin inventar ningún dato que el protocolo real de cada red no
+ofrezca:
+
+- **Soulseek** (`backends/soulseek_backend.py`): tras el booleano de
+  éxito del login (`_SRV_LOGIN`), el servidor manda un MOTD (se
+  descarta) y luego la IP externa propia tal como la ve él, como
+  campo `ip()` — antes se dejaba de leer ahí mismo. Ahora se captura
+  en `self._external_ip` y se descarta en silencio si el formato no
+  encaja (no crítico para el login). Expuesta en `get_stats()` como
+  `external_ip` solo si se pudo leer.
+- **DC++** (`backends/dcpp_backend.py`): se añadió manejo de
+  `$HubName <nombre>` (en el propio bucle del handshake, por si llega
+  antes de nuestro `$Hello`, y también en `_hub_read_loop()`, por si
+  llega después) guardado en `self._hub_name`; y de `$NickList`/
+  `$OpList` (mismo formato `nick1$$nick2$$...`, parseado por el nuevo
+  método `_parse_nick_list()`) más `$Hello <nick>`/`$Quit <nick>`
+  incrementales durante la sesión, acumulados en `self._hub_users:
+  set[str]`. Ambos expuestos en `get_stats()` como `hub_name` y
+  `hub_users` (el tamaño del set).
+- **eMule** (`backends/emule_backend.py`): se añadió el manejo de
+  `OP_SERVERSTATUS = 0x34` (constante que ya existía pero nunca se
+  despachaba), tanto en el bucle de login como en
+  `_server_read_loop()`, vía el nuevo método `_on_server_status()` que
+  desempaqueta `nUsers(uint32) + nFiles(uint32)` del payload — mismo
+  formato que usa el propio eMule/aMule real (`ServerSocket.cpp`,
+  case `OP_SERVERSTATUS`). Expuestos en `get_stats()` como
+  `server_users`/`server_files`.
+- **BitTorrent** (`backends/torrent_backend.py`): nuevo método
+  `list_trackers(download)`, que llama a `handle.trackers()` de
+  libtorrent (no usado hasta ahora en el proyecto) y devuelve una
+  lista de dicts con `url`, `working` (`fails == 0`), `message`,
+  `seeds` (`scrape_complete`) y `peers` (`scrape_incomplete`) por cada
+  tracker del torrent — nótese que en la versión de libtorrent
+  instalada (2.0.13.0) `handle.trackers()` devuelve directamente
+  dicts, no objetos `announce_entry` navegables por atributo pese a
+  que la propia clase `lt.announce_entry` sí expone esos campos como
+  propiedades. `core/download_manager.py` añade
+  `list_active_torrent_trackers()`, que recorre las descargas
+  BitTorrent activas (mismo filtro `_ACTIVE_STATES` que ya usaba
+  `reattach_active_downloads`) y aplana los trackers de todas ellas en
+  una sola lista con el título del torrent incluido, para poder
+  mostrarlos juntos en una tabla única en la GUI.
+- **Gnutella2**: sin cambios de backend — el ámbito ya fijado al
+  proponer el punto descartó explícitamente ping/RTT real y recuento
+  de usuarios por no existir en el protocolo real observado contra
+  hubs G2 reales.
+
+En la GUI, `gui/widgets/network_tab.py` se reescribió por completo:
+`NetworkTab` pasa de una única `QTableWidget` (una fila por red, con
+los detalles unidos en una sola cadena por "·") a un `QTabWidget` con
+una subpestaña `_NetworkPage` por red (icono de color sólido por red
+en la pestaña, ya que `QTabWidget` no permite colorear el propio texto
+de la pestaña como sí hacía la columna de red de la tabla plana
+anterior). Cada `_NetworkPage` tiene una etiqueta de estado de
+conexión (mismo color que el "piloto" que ya usaba la tabla plana) y
+una etiqueta de detalles con el mismo `_format_stats()` de siempre
+(ahora ampliado con las claves nuevas: `external_ip`, `hub_name`,
+`hub_users`, `server_users`, `server_files`); la subpestaña de
+BitTorrent añade además una tabla de trackers (torrent / URL / estado
+/ semillas / pares), rellenada en cada `_refresh_details()` (cada
+2000 ms, como antes) vía
+`download_manager.list_active_torrent_trackers()`. La acción
+"Explorar hub" (punto 10, solo Gnutella2) que antes colgaba de un menú
+contextual sobre la fila de G2 en la tabla plana ahora cuelga
+directamente del `QWidget` de la subpestaña de G2 (ya no hace falta
+calcular sobre qué fila se hizo clic — solo hay una red por página —
+así que no hace falta la corrección de posición de
+`AccessibleTableWidget` para ese caso; sigue usándose
+`AccessibleTableWidget` en la propia tabla de trackers, que si es una
+tabla de verdad con filas).
+
+Nuevas claves de i18n (`stat_external_ip`, `stat_hub_name`,
+`stat_hub_users`, `stat_server_users`, `stat_server_files`,
+`network_tab_trackers`, `acc_tracker_table`, `col_tracker_torrent`,
+`col_tracker_url`, `col_tracker_status`, `col_tracker_seeds`,
+`col_tracker_peers`, `tracker_working_yes`, `tracker_working_no`)
+traducidas a mano en los 13 idiomas soportados (no solo español con
+fallback, pese a que `t()` sí cae a español si falta una clave en el
+idioma activo — se mantiene la paridad completa entre idiomas que
+tenía el resto de la aplicación).
+
+Validado: pytest completo en verde (207 tests, incluyendo los nuevos
+`test_unpacker_login_success_reply_sequence`
+(`tests/test_soulseek_backend.py`), `test_parse_nick_list_*` y
+`test_hub_name_and_user_count_exposed_in_get_stats`
+(`tests/test_dcpp_backend.py`), y `test_list_trackers_*`
+(`tests/test_torrent_backend.py`, contra una `lt.session` real local
+con un magnet sintético, sin red de verdad — mismo patrón que el resto
+de tests de `torrent_backend.py` para el punto 34.3); comprobación de
+que las 14 claves nuevas de i18n existen en los 13 idiomas
+(`TRANSLATIONS`); y un script directo (fuera de pytest, con
+`QT_QPA_PLATFORM=offscreen`, sin ninguna prueba manual de GUI) que
+instancia `NetworkTab` de verdad, confirma que aparecen las 5
+subpestañas con su nombre correcto, dispara `_refresh_details()` sin
+excepciones, simula un cambio de estado a conectado (color y texto de
+la etiqueta correctos) y rellena la tabla de trackers de BitTorrent
+con una fila de prueba. La validación con tráfico real de cada campo
+nuevo (IP externa de Soulseek, nombre/usuarios de un hub DC++ real,
+usuarios/archivos de un servidor eD2k real, trackers de un torrent
+real) queda, como el resto del proyecto, para cuando el usuario la
+ejercite a mano por su cuenta.
 
 ### Arreglo: el aviso de reinicio al cambiar de idioma salía en el idioma antiguo
 
