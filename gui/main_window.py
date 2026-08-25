@@ -580,3 +580,16 @@ class MainWindow(QMainWindow):
         if self._tray_icon is not None:
             self._tray_icon.hide()
         super().closeEvent(event)
+
+        # Qt normalmente cierra la app solo al cerrarse la última ventana
+        # visible (quitOnLastWindowClosed), pero deja de hacerlo si la
+        # ventana ya se había ocultado antes con hide() -exactamente lo
+        # que pasa al minimizar a la bandeja y salir después desde su
+        # menú contextual, con la ventana ya oculta en ese momento-.
+        # Confirmado con un caso aislado: sin este quit() explícito,
+        # app.exec()/loop.run_forever() no vuelve nunca tras ese ciclo, y
+        # el proceso se queda vivo en memoria aunque el icono desaparezca
+        # de la bandeja. Se llama siempre en la rama de cierre real (no en
+        # la de "minimizar a la bandeja", que hace `event.ignore()` y
+        # vuelve antes de llegar aquí).
+        QApplication.instance().quit()

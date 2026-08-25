@@ -4969,3 +4969,48 @@ fuente sin pasar por el pipeline de empaquetado; se ha subido el valor
 committeado a "1.0.3" (la última release real en el momento de este
 cambio) para reducir la confusión, aunque quedará desfasado de nuevo
 en cuanto se publique la siguiente release.
+
+### Arreglo de verdad del zombi de "Salir": causa raíz en Qt, no en los backends
+
+Los dos arreglos anteriores (hilo daemon para el destructor de
+libtorrent, y el mismo patrón para la verificación de hash de DC++/
+eMule/Gnutella2) eran correctos pero no explicaban todo: el usuario
+seguía viendo el proceso zombi tanto en `python main.py` (solo al
+salir *desde el icono de la bandeja*, no al salir directamente) como
+en la app ya empaquetada (ahí, zombi tanto al cerrar la ventana como
+desde la bandeja).
+
+Causa raíz real, encontrada reproduciendo el caso mínimo con Qt puro
+(sin nada del proyecto): la app depende de que Qt cierre la aplicación
+solo al cerrarse la ventana principal (`quitOnLastWindowClosed`, activo
+por defecto, nunca se toca explícitamente) — pero **ese cierre
+automático deja de dispararse en cuanto la ventana se ha ocultado
+alguna vez con `hide()`** antes de cerrarse de verdad, que es
+exactamente lo que pasa al minimizar a la bandeja (`changeEvent()` /
+`closeEvent()` llaman a `self.hide()`) y salir después desde el menú
+de la bandeja, con la ventana ya oculta en ese momento. Confirmado con
+un caso aislado de una sola `QMainWindow` de PyQt6 corriendo un
+`app.exec()` real: con el ciclo mostrar → ocultar → mostrar → ocultar
+→ `close()`, `aboutToQuit` nunca se dispara y `exec()` no vuelve nunca
+(colgado, timeout); con el ciclo simple mostrar → `close()` sin ningún
+`hide()` de por medio, si funciona bien y `exec()` vuelve al momento
+-lo que explica por qué "python main.py, sin pasar antes por la
+bandeja" funcionaba, y por qué en la app instalada (donde es más
+habitual haber minimizado a la bandeja en algún momento de la sesión)
+fallaba siempre, incluso cerrando por la vía normal.
+
+Arreglado añadiendo una llamada explícita a
+`QApplication.instance().quit()` al final de la rama de cierre real de
+`MainWindow.closeEvent()` (nunca en la rama que hace
+`event.ignore()` + `hide()` para minimizar a la bandeja), en vez de
+confiar en el cierre automático implícito de Qt. Validado en dos
+pasos: (1) el mismo caso aislado de `QMainWindow` + `app.exec()` de
+arriba, confirmando que con el `quit()` explícito el ciclo
+ocultar/mostrar/ocultar/cerrar ya no cuelga; (2) un script que levanta
+la `MainWindow` real de la app con `qasync` sobre `QT_QPA_PLATFORM=
+offscreen`, simula minimizar a bandeja → restaurar → minimizar de
+nuevo → "Salir" desde la bandeja (`_on_quit()`), y comprueba que
+`loop.run_forever()` termina solo — confirmado sin arreglo (revertido
+temporalmente con `git stash`) que el proceso no llegaba a un cierre
+limpio en el mismo escenario, y con el arreglo aplicado el bucle
+termina y el script imprime su mensaje de éxito.
