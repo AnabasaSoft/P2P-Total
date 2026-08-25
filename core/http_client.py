@@ -12,10 +12,40 @@ propio socket con `core.proxy.open_connection` directamente.
 """
 
 import asyncio
+import os
 import ssl
 from urllib.parse import urlparse
 
 from core.proxy import ProxyConfig, open_connection as proxy_open_connection
+
+# Rutas habituales del almacén de certificados CA del sistema, una por
+# familia de distribución Linux (Debian/Ubuntu, Fedora/RHEL, openSUSE,
+# Alpine...). Se comprueban en este orden y se usa la primera que exista de
+# verdad en el sistema anfitrión en vez de confiar en la ruta compilada por
+# defecto de OpenSSL (`ssl.create_default_context()` sin `cafile`): en el
+# ejecutable empaquetado con PyInstaller, `libssl`/`libcrypto` se compilan
+# en el runner de CI (Ubuntu) y llevan esa ruta grabada, que no existe en
+# otras distros -confirmado en real en openSUSE, donde el paquete instalado
+# fallaba con "CERTIFICATE_VERIFY_FAILED: unable to get local issuer
+# certificate" al comprobar actualizaciones mientras `python main.py`
+# (con el OpenSSL del sistema, con su propia ruta correcta) funcionaba
+# bien-. Comprobar la ruta a mano con `os.path.exists()` sortea el problema
+# porque no depende de qué OpenSSL esté enlazado, solo del sistema de
+# ficheros real.
+_CA_BUNDLE_CANDIDATES = (
+    "/etc/ssl/certs/ca-certificates.crt",  # Debian, Ubuntu, Arch, Gentoo
+    "/etc/pki/tls/certs/ca-bundle.crt",  # Fedora, RHEL, CentOS
+    "/etc/ssl/ca-bundle.pem",  # openSUSE
+    "/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem",  # RHEL/CentOS 7
+    "/etc/ssl/cert.pem",  # Alpine, macOS
+)
+
+
+def _create_ssl_context() -> ssl.SSLContext:
+    for candidate in _CA_BUNDLE_CANDIDATES:
+        if os.path.exists(candidate):
+            return ssl.create_default_context(cafile=candidate)
+    return ssl.create_default_context()
 
 
 async def http_get(url: str, timeout: float = 20.0, proxy: ProxyConfig | None = None,
@@ -35,7 +65,7 @@ async def http_get(url: str, timeout: float = 20.0, proxy: ProxyConfig | None = 
     if parsed.query:
         path += f"?{parsed.query}"
 
-    ssl_context = ssl.create_default_context() if is_https else None
+    ssl_context = _create_ssl_context() if is_https else None
     reader, writer = await proxy_open_connection(host, port, proxy=proxy, ssl=ssl_context, timeout=timeout)
     try:
         header_lines = [
@@ -98,7 +128,7 @@ async def http_download(url: str, dest_path, timeout: float = 60.0, proxy: Proxy
     if parsed.query:
         path += f"?{parsed.query}"
 
-    ssl_context = ssl.create_default_context() if is_https else None
+    ssl_context = _create_ssl_context() if is_https else None
     reader, writer = await proxy_open_connection(host, port, proxy=proxy, ssl=ssl_context, timeout=timeout)
     try:
         header_lines = [

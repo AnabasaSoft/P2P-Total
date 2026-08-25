@@ -5067,9 +5067,52 @@ Validado con dos pruebas dirigidas simulando un fallo de red real
 `MainWindow._check_for_update()` completo (con `qasync` sobre
 `QT_QPA_PLATFORM=offscreen`), confirmando que el `QMessageBox.warning`
 que ve el usuario contiene el texto real del error simulado en vez del
-mensaje de "ya tienes la última versión". **Pendiente**: si al usuario
-le sigue sin funcionar tras esta corrección, ahora el propio botón le
-mostrará el motivo exacto del fallo (en vez de un silencio ambiguo),
-lo que debería bastar para identificar la causa real definitiva
-(¿proxy mal configurado?, ¿DNS/firewall local?, ¿otra cosa?) en el
-siguiente intento.
+mensaje de "ya tienes la última versión".
+
+Y funcionó exactamente como se esperaba: en el siguiente intento del
+usuario, el botón mostró el error real en vez de callarlo: `[SSL:
+CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get
+local issuer certificate`, solo en el paquete instalado (rpm), nunca
+en `python main.py`. Con el error real ya visible, la causa raíz salió
+a la luz de inmediato (ver siguiente sección).
+
+### Arreglo de verdad de la detección de actualizaciones: SSL empaquetado con la ruta de certificados de otra distro
+
+Causa raíz confirmada con el error real de arriba: el ejecutable
+empaquetado (`packaging/p2p-total.spec` vía PyInstaller) se compila en
+el runner `ubuntu-latest` de GitHub Actions, y PyInstaller empaqueta
+ahí mismo los `libssl`/`libcrypto` del sistema de compilación. Esas
+bibliotecas llevan grabada en su compilación la ruta por defecto del
+almacén de certificados CA **de Ubuntu** (convención Debian). Al
+ejecutar el paquete en una distro distinta -el caso real del usuario,
+openSUSE Tumbleweed, con su almacén en `/etc/ssl/ca-bundle.pem` /
+`/var/lib/ca-certificates/ca-bundle.pem`, no en la ruta de Ubuntu-,
+`ssl.create_default_context()` sin `cafile` explícito confía en esa
+ruta grabada por OpenSSL en tiempo de compilación
+(`SSL_CTX_set_default_verify_paths()`), que sencillamente no existe en
+el sistema real, y la verificación TLS falla con
+`CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` -
+en cualquier petición HTTPS del paquete instalado, no solo la
+comprobación de actualizaciones-. `python main.py` nunca lo sufría
+porque usa el OpenSSL del propio sistema (el correcto para esa
+distro), nunca uno grabado en otro sistema de compilación.
+
+Arreglado en `core/http_client.py` sin añadir ninguna dependencia
+nueva (`certifi` u otra): una lista de rutas típicas del almacén de
+certificados por familia de distro Linux (Debian/Ubuntu, Fedora/RHEL,
+openSUSE, RHEL7, Alpine/macOS), comprobadas en orden con
+`os.path.exists()` -sobre el sistema de ficheros real del anfitrión,
+sin pasar por OpenSSL para nada- y la primera que exista de verdad se
+pasa explícita como `cafile=` a `ssl.create_default_context(cafile=
+...)`, tanto en `http_get` como en `http_download`; si ninguna
+existiera (distro no contemplada), se cae al comportamiento anterior
+sin romper nada. Validado: (1) en el propio sistema de desarrollo
+(openSUSE), `_create_ssl_context()` encuentra
+`/etc/ssl/certs/ca-certificates.crt` y `/etc/ssl/ca-bundle.pem`, y una
+petición HTTPS real de extremo a extremo contra la API de GitHub
+(`check_for_update(raise_errors=True)`) funciona con el contexto
+explícito; (2) suite completa de pytest en verde. La prueba
+definitiva -el paquete `.rpm` reconstruido detectando la actualización
+en el propio openSUSE del usuario, donde antes fallaba- queda
+pendiente de que se reconstruya y publique un nuevo paquete con este
+cambio.
