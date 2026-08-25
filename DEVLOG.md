@@ -4496,6 +4496,63 @@ búsqueda/descarga; falta la parte social):
     Con 34.7 se completan todos los sub-puntos de la lista (34.1-34.7):
     el punto 34 queda cerrado.
 
+35. Pestaña "Red" con subpestañas por servidor/red, con toda la
+    información posible según el protocolo de cada una (añadido
+    2026-08-25, a petición explícita del usuario: "creo que añadir
+    subpestañas en la pestaña de red, con una pestaña por servidor que
+    contenga toda la información posible (número de usuarios, número
+    de archivos, ping, id alta o id baja, ip, etc... todo lo posible
+    según la red y las posibilidades)"). Antes de proponerlo se
+    revisó a fondo el `get_stats()` real de cada backend y qué campos
+    del protocolo se reciben pero se descartan hoy sin guardar, para
+    no prometer datos que ninguna red real ofrece. Sustituye la tabla
+    plana única de `gui/widgets/network_tab.py` (una fila por red, con
+    una cadena de detalles unida por "·") por una subpestaña por red
+    conectada, mostrando por cada una:
+    - **BitTorrent**: lo que ya expone `get_stats()` hoy
+      (`listen_port`, `dht_nodes`, `active_transfers`,
+      `connected_peers`, `encrypted_peers`, `utp_connections`), más
+      como mejora nueva el estado de cada tracker por torrent vía
+      `torrent_handle.trackers()` de libtorrent (no usado hoy en el
+      proyecto): URL, último anuncio y número de peers/seeds que
+      reporta cada tracker.
+    - **Soulseek**: lo que ya expone `get_stats()` hoy (`server`,
+      `username`, `listen_port`, `active_transfers`,
+      `shared_files`/`active_uploads`), más la IP externa propia tal
+      como la ve el servidor — el protocolo real la manda en la propia
+      respuesta de login (`_SRV_LOGIN`) justo después del booleano de
+      éxito, pero hoy se lee solo ese booleano y se descarta el resto
+      del mensaje (ver `soulseek_backend.py`, hacia la línea 456). No
+      existe en el protocolo real ningún mensaje de "usuarios totales
+      conectados al servidor", así que ese dato no es viable sin
+      inventárselo.
+    - **DC++**: lo que ya expone `get_stats()` hoy (`server`,
+      `nickname`, `listen_port`, `active_transfers`,
+      `shared_files`/`active_uploads`), más nombre del hub (mensaje
+      `$HubName`, hoy sin manejar) y número de usuarios conectados al
+      hub (`$NickList`/`$OpList`, o contando los `$Hello` recibidos —
+      ninguno de los dos se procesa hoy en `dcpp_backend.py`).
+    - **Gnutella2**: lo que ya expone `get_stats()` hoy (`server`,
+      `known_peers` como tamaño de la caché de hubs descubiertos,
+      `active_transfers`, `shared_files`/`active_uploads`), dejando
+      claro que `known_peers` es solo caché de bootstrap, no hubs
+      conectados a la vez de verdad (hoy solo se mantiene una conexión
+      activa a un hub). No existe ping/RTT real medido (solo se
+      responde de cortesía a los pings del propio hub) ni recuento de
+      usuarios del hub en el protocolo real observado.
+    - **eMule/Kad**: lo que ya expone `get_stats()` hoy (`server`,
+      `nickname`, `known_peers` como contactos Kad, `active_transfers`,
+      `id_status` alta/baja, `kad_firewalled`,
+      `shared_files`/`active_uploads`/`upload_slots`/`upload_queue`),
+      más usuarios y archivos que anuncia el propio servidor eD2k vía
+      `OP_SERVERSTATUS = 0x34` (la constante ya existe en
+      `emule_backend.py` pero el opcode nunca se maneja en el
+      despachador de mensajes — solo se usa `OP_SERVERMESSAGE` para un
+      `print` de depuración).
+
+    Pendiente de implementar, siguiente en orden estricto tras
+    cerrarse el punto 34.
+
 ### Arreglo: el aviso de reinicio al cambiar de idioma salía en el idioma antiguo
 
 Bug real reportado por el usuario: al cambiar el idioma en Preferencias
@@ -5111,8 +5168,47 @@ sin romper nada. Validado: (1) en el propio sistema de desarrollo
 `/etc/ssl/certs/ca-certificates.crt` y `/etc/ssl/ca-bundle.pem`, y una
 petición HTTPS real de extremo a extremo contra la API de GitHub
 (`check_for_update(raise_errors=True)`) funciona con el contexto
-explícito; (2) suite completa de pytest en verde. La prueba
-definitiva -el paquete `.rpm` reconstruido detectando la actualización
-en el propio openSUSE del usuario, donde antes fallaba- queda
-pendiente de que se reconstruya y publique un nuevo paquete con este
-cambio.
+explícito; (2) suite completa de pytest en verde. **Confirmado en
+producción por el usuario**: tras reconstruir y publicar el paquete
+`.rpm` con este cambio, la detección de actualizaciones funciona de
+verdad en su propio openSUSE (donde antes fallaba), detectando
+correctamente varias versiones de prueba publicadas después del
+arreglo (v1.0.9, v1.0.10) hasta terminar de validar el ciclo completo
+con v1.0.6 como última versión real.
+
+### Arreglo: el mismo bug de SSL seguía sin corregir en eMule (reimplementación duplicada del cliente HTTP)
+
+Tras confirmar en producción el arreglo anterior, se lanzó una
+revisión de código a fondo del repositorio completo (petición
+explícita del usuario: "revisa el código a fondo y búsca posibles
+fallos, incoherencias o mejoras"), en segundo plano mediante el skill
+`code-review` mientras se seguía conversando sobre otra tarea. El
+hallazgo principal: `backends/emule_backend.py` tenía su propia
+reimplementación de cliente HTTP(S) desde cero (`_http_get`/
+`_dechunk`, prácticamente un duplicado de `core/http_client.py`),
+usada por `discover_servers()` y `discover_kad_nodes()` para descargar
+`server.met`/`nodes.dat` desde `https://upd.emule-security.org/`. Esa
+copia local seguía llamando a `ssl.create_default_context()` **sin**
+`cafile` explícito -el mismo bug ya arreglado en `core/http_client.py`
+más arriba-, así que el paquete instalado en distros no-Ubuntu seguía
+fallando con `CERTIFICATE_VERIFY_FAILED` en este camino concreto
+(bootstrap de servidores eD2k/Kad), aunque el resto de peticiones
+HTTPS del proyecto ya estuviera arreglado.
+
+Arreglado eliminando por completo la reimplementación duplicada:
+`backends/emule_backend.py` ahora importa y usa directamente
+`core.http_client.http_get` en los dos puntos donde antes llamaba a su
+propio `_http_get`, heredando así el arreglo compartido en vez de
+mantener una segunda copia que se puede desincronizar. De paso se
+limpiaron los imports que quedaron sin uso (`import ssl` entero, y
+`urlparse` de la línea `from urllib.parse import unquote, urlparse`,
+dejando solo `unquote`, que sí se sigue usando). Validado: (1) suite
+completa de pytest en verde (201 pruebas, sin cambios respecto a
+antes); (2) inspección de código (`inspect.getsource()`) confirmando
+que `discover_servers()` y `discover_kad_nodes()` llaman ahora a
+`http_get(...)` importado de `core.http_client`; (3) búsqueda en todo
+el repositorio de `ssl.create_default_context` confirmando que los
+únicos tres usos restantes son los legítimos dentro de
+`core/http_client.py` (el comentario y las dos llamadas de
+`_create_ssl_context()`) -ninguna otra copia sin arreglar en el resto
+del proyecto.

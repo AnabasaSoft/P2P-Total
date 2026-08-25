@@ -59,19 +59,19 @@ import hashlib
 import json
 import os
 import socket
-import ssl
 import struct
 import time
 import zlib
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote
 
 from core import upnp
 from core.aich import EMBLOCKSIZE, block_count, block_sha1, levels_to_part
 from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.config import _config_dir
+from core.http_client import http_get
 from core.md4 import md4
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
@@ -565,69 +565,6 @@ def parse_udp_packet(data: bytes) -> tuple[int, int, bytes]:
     if protocol == OP_KADEMLIAPACKEDPROT:
         payload = zlib.decompress(payload)
     return protocol, opcode, payload
-
-
-# --------------------------------------------------------------------------
-# Cliente HTTP(S) mínimo (mismo patrón que el resto del proyecto, sin
-# librerías externas) para descargar server.met/nodes.dat.
-# --------------------------------------------------------------------------
-
-async def _http_get(url: str, timeout: float = 15.0, _redirects: int = 3,
-                     proxy: ProxyConfig | None = None) -> bytes:
-    parsed = urlparse(url)
-    host = parsed.hostname
-    port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    path = parsed.path or "/"
-    if parsed.query:
-        path += f"?{parsed.query}"
-
-    ssl_context = ssl.create_default_context() if parsed.scheme == "https" else None
-    reader, writer = await proxy_open_connection(host, port, proxy=proxy, ssl=ssl_context, timeout=timeout)
-    try:
-        request = (
-            f"GET {path} HTTP/1.1\r\n"
-            f"Host: {host}\r\n"
-            f"User-Agent: P2P-Total/0.1\r\n"
-            f"Connection: close\r\n\r\n"
-        )
-        writer.write(request.encode("ascii"))
-        await writer.drain()
-        raw = await asyncio.wait_for(reader.read(-1), timeout=timeout)
-    finally:
-        writer.close()
-
-    if b"\r\n\r\n" not in raw:
-        return b""
-    headers, _, body = raw.partition(b"\r\n\r\n")
-    status_line = headers.split(b"\r\n", 1)[0]
-
-    if _redirects > 0 and (b" 301 " in status_line or b" 302 " in status_line or b" 303 " in status_line or b" 307 " in status_line):
-        for line in headers.split(b"\r\n"):
-            if line.lower().startswith(b"location:"):
-                location = line.split(b":", 1)[1].strip().decode("utf-8", errors="replace")
-                return await _http_get(location, timeout=timeout, _redirects=_redirects - 1, proxy=proxy)
-
-    if b"transfer-encoding: chunked" in headers.lower():
-        body = _dechunk(body)
-    return body
-
-
-def _dechunk(data: bytes) -> bytes:
-    out = bytearray()
-    while data:
-        line_end = data.find(b"\r\n")
-        if line_end == -1:
-            break
-        try:
-            size = int(data[:line_end].split(b";")[0], 16)
-        except ValueError:
-            break
-        if size == 0:
-            break
-        chunk_start = line_end + 2
-        out += data[chunk_start:chunk_start + size]
-        data = data[chunk_start + size + 2:]
-    return bytes(out)
 
 
 # --------------------------------------------------------------------------
@@ -1212,7 +1149,7 @@ class EMuleBackend(NetworkBackend):
     # -- servidor eD2k ------------------------------------------------------
 
     async def discover_servers(self, timeout: float = 15.0) -> list[tuple[str, int]]:
-        data = await _http_get(SERVER_MET_URL, timeout=timeout, proxy=self._proxy)
+        data = await http_get(SERVER_MET_URL, timeout=timeout, proxy=self._proxy)
         return parse_server_met(data)
 
     @property
@@ -1365,7 +1302,7 @@ class EMuleBackend(NetworkBackend):
     # -- Kad ------------------------------------------------------------
 
     async def discover_kad_nodes(self, timeout: float = 15.0) -> list[dict]:
-        data = await _http_get(NODES_DAT_URL, timeout=timeout, proxy=self._proxy)
+        data = await http_get(NODES_DAT_URL, timeout=timeout, proxy=self._proxy)
         return parse_nodes_dat(data)
 
     async def connect_kad(self, timeout: float = 8.0, debug: bool = False) -> int:
