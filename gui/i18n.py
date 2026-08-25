@@ -48,6 +48,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Idioma",
         "menu_help": "A&yuda",
         "menu_help_about": "ℹ️ Acerca de",
+        "menu_help_check_updates": "🔄 Buscar actualizaciones",
 
         # --- Añadir magnet / .torrent (menú Archivo) ---
         "dlg_open_link_title": "Abrir enlace",
@@ -391,6 +392,7 @@ TRANSLATIONS = {
         "update_downloading": "Descargando actualización…",
         "update_download_failed": "No se ha podido descargar la actualización. Prueba a descargarla a mano desde la página de GitHub.",
         "update_apply_failed": "Se ha descargado la actualización pero no se ha podido instalar. Prueba a instalarla a mano desde el fichero descargado.",
+        "update_check_up_to_date": "Ya tienes instalada la última versión disponible.",
 
         # --- Barra de estado ---
         "statusbar_ready": "Listo",
@@ -465,6 +467,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Language",
         "menu_help": "&Help",
         "menu_help_about": "ℹ️ About",
+        "menu_help_check_updates": "🔄 Check for updates",
 
         # --- Add magnet / .torrent (File menu) ---
         "dlg_open_link_title": "Open link",
@@ -798,6 +801,7 @@ TRANSLATIONS = {
         "update_downloading": "Downloading update…",
         "update_download_failed": "Could not download the update. Try downloading it manually from the GitHub page.",
         "update_apply_failed": "The update was downloaded but could not be installed. Try installing it manually from the downloaded file.",
+        "update_check_up_to_date": "You already have the latest version installed.",
 
         "statusbar_ready": "Ready",
         "statusbar_connected_count": "{n}/{total} networks connected",
@@ -870,6 +874,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Hizkuntza",
         "menu_help": "&Laguntza",
         "menu_help_about": "ℹ️ Honi buruz",
+        "menu_help_check_updates": "🔄 Eguneraketak bilatu",
 
         # --- Magnet / .torrent gehitu (Fitxategia menua) ---
         "dlg_open_link_title": "Esteka ireki",
@@ -1204,6 +1209,7 @@ TRANSLATIONS = {
         "update_downloading": "Eguneraketa deskargatzen…",
         "update_download_failed": "Ezin izan da eguneraketa deskargatu. Saiatu eskuz deskargatzen GitHub-eko orritik.",
         "update_apply_failed": "Eguneraketa deskargatu da baina ezin izan da instalatu. Saiatu eskuz instalatzen deskargatutako fitxategitik.",
+        "update_check_up_to_date": "Dagoeneko azken bertsioa instalatuta duzu.",
 
         "statusbar_ready": "Prest",
         "statusbar_connected_count": "{n}/{total} sare konektatuta",
@@ -1275,6 +1281,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Langue",
         "menu_help": "&Aide",
         "menu_help_about": "ℹ️ À propos",
+        "menu_help_check_updates": "🔄 Rechercher des mises à jour",
 
         "dlg_open_link_title": "Ouvrir un lien",
         "dlg_open_link_label": "Lien magnet:, ed2k:// ou dchub:// (ou un hash de 40 caractères hexadécimaux) :",
@@ -1608,6 +1615,7 @@ TRANSLATIONS = {
         "update_downloading": "Téléchargement de la mise à jour…",
         "update_download_failed": "Impossible de télécharger la mise à jour. Essayez de la télécharger manuellement depuis la page GitHub.",
         "update_apply_failed": "La mise à jour a été téléchargée mais n'a pas pu être installée. Essayez de l'installer manuellement à partir du fichier téléchargé.",
+        "update_check_up_to_date": "Vous avez déjà la dernière version installée.",
 
         "statusbar_ready": "Prêt",
         "statusbar_connected_count": "{n}/{total} réseaux connectés",
@@ -1677,6 +1685,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Lingua",
         "menu_help": "&Aiuto",
         "menu_help_about": "ℹ️ Informazioni",
+        "menu_help_check_updates": "🔄 Cerca aggiornamenti",
 
         "dlg_open_link_title": "Apri un link",
         "dlg_open_link_label": "Link magnet:, ed2k:// o dchub:// (oppure un hash di 40 caratteri esadecimali):",
@@ -2010,6 +2019,7 @@ TRANSLATIONS = {
         "update_downloading": "Download dell'aggiornamento…",
         "update_download_failed": "Impossibile scaricare l'aggiornamento. Prova a scaricarlo manualmente dalla pagina GitHub.",
         "update_apply_failed": "L'aggiornamento è stato scaricato ma non è stato possibile installarlo. Prova a installarlo manualmente dal file scaricato.",
+        "update_check_up_to_date": "Hai già installato l'ultima versione disponibile.",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} reti connesse",
@@ -2079,6 +2089,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Idioma",
         "menu_help": "&Ajuda",
         "menu_help_about": "ℹ️ Acerca de",
+        "menu_help_check_updates": "🔄 Procurar atualizações",
 
         "dlg_open_link_title": "Abrir uma ligação",
         "dlg_open_link_label": "Ligação magnet:, ed2k:// ou dchub:// (ou um hash de 40 caracteres hexadecimais):",
@@ -2411,6 +2422,7 @@ TRANSLATIONS = {
         "update_downloading": "A descarregar a atualização…",
         "update_download_failed": "Não foi possível descarregar a atualização. Tente descarregá-la manualmente a partir da página do GitHub.",
         "update_apply_failed": "A atualização foi descarregada mas não foi possível instalá-la. Tente instalá-la manualmente a partir do ficheiro descarregado.",
+        "update_check_up_to_date": "Já tem instalada a versão mais recente.",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} redes ligadas",
@@ -2480,6 +2492,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Sprache",
         "menu_help": "&Hilfe",
         "menu_help_about": "ℹ️ Über",
+        "menu_help_check_updates": "🔄 Nach Updates suchen",
 
         "dlg_open_link_title": "Link öffnen",
         "dlg_open_link_label": "magnet:-, ed2k:// oder dchub://-Link (oder ein 40-stelliger Hex-Hash):",
@@ -2815,6 +2828,7 @@ TRANSLATIONS = {
         "update_downloading": "Update wird heruntergeladen…",
         "update_download_failed": "Das Update konnte nicht heruntergeladen werden. Versuche es manuell über die GitHub-Seite herunterzuladen.",
         "update_apply_failed": "Das Update wurde heruntergeladen, konnte aber nicht installiert werden. Versuche es manuell aus der heruntergeladenen Datei zu installieren.",
+        "update_check_up_to_date": "Sie haben bereits die neueste Version installiert.",
 
         "statusbar_ready": "Bereit",
         "statusbar_connected_count": "{n}/{total} Netzwerke verbunden",
@@ -2884,6 +2898,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Idioma",
         "menu_help": "&Ajuda",
         "menu_help_about": "ℹ️ Quant a",
+        "menu_help_check_updates": "🔄 Cerca actualitzacions",
 
         "dlg_open_link_title": "Obre un enllaç",
         "dlg_open_link_label": "Enllaç magnet:, ed2k:// o dchub:// (o un hash de 40 caràcters hexadecimals):",
@@ -3216,6 +3231,7 @@ TRANSLATIONS = {
         "update_downloading": "Descarregant l'actualització…",
         "update_download_failed": "No s'ha pogut descarregar l'actualització. Prova de descarregar-la manualment des de la pàgina de GitHub.",
         "update_apply_failed": "L'actualització s'ha descarregat però no s'ha pogut instal·lar. Prova d'instal·lar-la manualment des del fitxer descarregat.",
+        "update_check_up_to_date": "Ja tens instal·lada la darrera versió disponible.",
 
         "statusbar_ready": "Preparat",
         "statusbar_connected_count": "{n}/{total} xarxes connectades",
@@ -3285,6 +3301,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Idioma",
         "menu_help": "&Axuda",
         "menu_help_about": "ℹ️ Sobre",
+        "menu_help_check_updates": "🔄 Buscar actualizacións",
 
         "dlg_open_link_title": "Abrir unha ligazón",
         "dlg_open_link_label": "Ligazón magnet:, ed2k:// ou dchub:// (ou un hash de 40 caracteres hexadecimais):",
@@ -3617,6 +3634,7 @@ TRANSLATIONS = {
         "update_downloading": "Descargando a actualización…",
         "update_download_failed": "Non se puido descargar a actualización. Proba a descargala manualmente desde a páxina de GitHub.",
         "update_apply_failed": "A actualización descargouse pero non se puido instalar. Proba a instalala manualmente desde o ficheiro descargado.",
+        "update_check_up_to_date": "Xa tes instalada a última versión dispoñible.",
 
         "statusbar_ready": "Listo",
         "statusbar_connected_count": "{n}/{total} redes conectadas",
@@ -3686,6 +3704,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 Язык",
         "menu_help": "&Справка",
         "menu_help_about": "ℹ️ О программе",
+        "menu_help_check_updates": "🔄 Проверить обновления",
 
         "dlg_open_link_title": "Открыть ссылку",
         "dlg_open_link_label": "Ссылка magnet:, ed2k:// или dchub:// (или хеш из 40 шестнадцатеричных символов):",
@@ -4019,6 +4038,7 @@ TRANSLATIONS = {
         "update_downloading": "Загрузка обновления…",
         "update_download_failed": "Не удалось загрузить обновление. Попробуйте скачать его вручную со страницы GitHub.",
         "update_apply_failed": "Обновление загружено, но не удалось его установить. Попробуйте установить его вручную из скачанного файла.",
+        "update_check_up_to_date": "У вас уже установлена последняя версия.",
 
         "statusbar_ready": "Готово",
         "statusbar_connected_count": "{n}/{total} сетей подключено",
@@ -4088,6 +4108,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 语言",
         "menu_help": "帮助(&H)",
         "menu_help_about": "ℹ️ 关于",
+        "menu_help_check_updates": "🔄 检查更新",
 
         "dlg_open_link_title": "打开链接",
         "dlg_open_link_label": "magnet:、ed2k:// 或 dchub:// 链接（或 40 个十六进制字符的哈希值）：",
@@ -4406,6 +4427,7 @@ TRANSLATIONS = {
         "update_downloading": "正在下载更新…",
         "update_download_failed": "无法下载更新。请尝试从 GitHub 页面手动下载。",
         "update_apply_failed": "更新已下载，但无法安装。请尝试从已下载的文件手动安装。",
+        "update_check_up_to_date": "您已安装最新版本。",
 
         "statusbar_ready": "就绪",
         "statusbar_connected_count": "{n}/{total} 个网络已连接",
@@ -4475,6 +4497,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 言語",
         "menu_help": "ヘルプ(&H)",
         "menu_help_about": "ℹ️ 情報",
+        "menu_help_check_updates": "🔄 アップデートを確認",
 
         "dlg_open_link_title": "リンクを開く",
         "dlg_open_link_label": "magnet:、ed2k://、dchub:// リンク（または40桁の16進数ハッシュ）：",
@@ -4799,6 +4822,7 @@ TRANSLATIONS = {
         "update_downloading": "更新をダウンロード中…",
         "update_download_failed": "更新をダウンロードできませんでした。GitHub のページから手動でダウンロードしてください。",
         "update_apply_failed": "更新はダウンロードされましたが、インストールできませんでした。ダウンロードしたファイルから手動でインストールしてください。",
+        "update_check_up_to_date": "最新バージョンが既にインストールされています。",
 
         "statusbar_ready": "準備完了",
         "statusbar_connected_count": "{n}/{total} ネットワークに接続中",
@@ -4869,6 +4893,7 @@ TRANSLATIONS = {
         "menu_view_language": "🌐 언어",
         "menu_help": "도움말(&H)",
         "menu_help_about": "ℹ️ 정보",
+        "menu_help_check_updates": "🔄 업데이트 확인",
 
         "dlg_open_link_title": "링크 열기",
         "dlg_open_link_label": "magnet:, ed2k:// 또는 dchub:// 링크 (또는 40자리 16진수 해시):",
@@ -5198,6 +5223,7 @@ TRANSLATIONS = {
         "update_downloading": "업데이트 다운로드 중…",
         "update_download_failed": "업데이트를 다운로드할 수 없습니다. GitHub 페이지에서 수동으로 다운로드해 보세요.",
         "update_apply_failed": "업데이트가 다운로드되었지만 설치할 수 없습니다. 다운로드한 파일에서 수동으로 설치해 보세요.",
+        "update_check_up_to_date": "이미 최신 버전이 설치되어 있습니다.",
 
         "statusbar_ready": "준비됨",
         "statusbar_connected_count": "{n}/{total}개 네트워크 연결됨",

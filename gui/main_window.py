@@ -109,10 +109,15 @@ class MainWindow(QMainWindow):
 
         asyncio.ensure_future(self._check_for_update())
 
-    async def _check_for_update(self) -> None:
+    def _on_check_for_updates_clicked(self) -> None:
+        asyncio.ensure_future(self._check_for_update(silent=False))
+
+    async def _check_for_update(self, silent: bool = True) -> None:
         config = load_config()
         info = await check_for_update(proxy=config.proxy)
         if info is None:
+            if not silent:
+                QMessageBox.information(self, t("update_dialog_title"), t("update_check_up_to_date"))
             return
         install_kind = detect_install_kind()
         asset = find_update_asset(info.assets, install_kind) if can_self_update(install_kind) else None
@@ -221,6 +226,10 @@ class MainWindow(QMainWindow):
             language_menu.addAction(action)
 
         help_menu = menu_bar.addMenu(t("menu_help"))
+        check_updates_action = QAction(t("menu_help_check_updates"), self)
+        check_updates_action.triggered.connect(self._on_check_for_updates_clicked)
+        help_menu.addAction(check_updates_action)
+        help_menu.addSeparator()
         about_action = QAction(t("menu_help_about"), self)
         about_action.triggered.connect(self._on_about)
         help_menu.addAction(about_action)

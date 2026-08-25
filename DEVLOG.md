@@ -4924,3 +4924,48 @@ llegó a publicar ninguna release (sin paquetes que perder, ninguno se
 llegó a compilar del todo) — se borró el tag `v1.0.2` (local y
 remoto) al no tener release asociada, dejando limpio el siguiente
 intento (`v1.0.3`) para revalidar el arreglo completo.
+
+### Función: botón "Buscar actualizaciones" en el menú Ayuda
+
+El usuario reportó que, con la versión 1.0.2 instalada desde GitHub,
+la app no avisaba de que ya había disponible la 1.0.3. Investigado a
+fondo: el paquete instalado real (`rpm -qa` → `p2p-total-1.0.2-1.x86_64`)
+sí lleva grabado internamente `core.version.VERSION = "1.0.2"` (se
+confirmó extrayendo el bytecode de ese módulo del propio ejecutable
+empaquetado con las herramientas de PyInstaller), y la lógica de
+`check_for_update()` sí detecta correctamente la 1.0.3 como más nueva
+al consultar la API real de GitHub — no había ningún fallo ahí. El
+problema es que esa comprobación **solo se dispara una vez, al crear
+la ventana principal** (`MainWindow.__init__` en
+`gui/main_window.py`), sin ningún timer periódico ni forma manual de
+repetirla — si el proceso lleva abierto desde antes de que se publique
+una release nueva (o si quedó un proceso zombi de una sesión anterior
+vivo de fondo, como el bug arreglado en la sección anterior), nunca
+vuelve a preguntar.
+
+Añadido un botón "🔄 Buscar actualizaciones" al principio del menú
+Ayuda que dispara la misma `_check_for_update()` bajo demanda; se le
+añade un parámetro `silent: bool = True` para poder diferenciar el
+caso de la comprobación automática al arrancar (sin avisar si no hay
+nada nuevo, como hasta ahora) del caso de la comprobación manual
+(muestra un aviso informativo "Ya tienes instalada la última versión
+disponible" si no hay actualización). Traducido a los 13 idiomas que
+ya soporta la GUI (`gui/i18n.py`). Validado con la suite completa de
+`pytest` (201 pruebas) y comprobando a mano que las 13 traducciones
+tienen las dos claves nuevas.
+
+De paso, aclarado un motivo de confusión que también reportó el
+usuario: al ejecutar `python main.py` desde el propio repositorio en
+desarrollo, "Acerca de" mostraba la versión "1.0.1" mientras que el
+paquete descargado de GitHub decía "1.0.2". Esto es el comportamiento
+esperado del diseño actual (ver la sección "la aplicación empaquetada
+nunca supo su propia versión real" más arriba): `core/version.py` en
+el repositorio es solo un valor por defecto que el CI sobrescribe en
+tiempo de compilación con `packaging/set_version.py`, a partir del tag
+real — el valor committeado no se actualiza solo con cada release y
+por tanto se queda desfasado en el checkout de desarrollo. No es un
+bug de la app final, solo de lo que se ve al arrancar desde el código
+fuente sin pasar por el pipeline de empaquetado; se ha subido el valor
+committeado a "1.0.3" (la última release real en el momento de este
+cambio) para reducir la confusión, aunque quedará desfasado de nuevo
+en cuanto se publique la siguiente release.
