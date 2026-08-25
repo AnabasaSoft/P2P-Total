@@ -5212,3 +5212,66 @@ el repositorio de `ssl.create_default_context` confirmando que los
 `core/http_client.py` (el comentario y las dos llamadas de
 `_create_ssl_context()`) -ninguna otra copia sin arreglar en el resto
 del proyecto.
+
+### Arreglo: la GUI se quedaba semi-bloqueada (clics fantasma) al conectar a Gnutella2
+
+Bug real reportado por el usuario: "cuando está conectando a alguna
+red, la gui se queda semi-bloqueada, se oscurecen los accesos de la
+barra de menú, pero no se abren los menús; si haces clic en los menús
+(archivo, ayuda, etc...) luego se activan cosas como el modo claro que
+no había dado (clics fantasma)". El síntoma descrito -barra de menú
+"apagada", clics que no abren nada y que luego se disparan sobre otro
+elemento al desbloquearse- es el tratamiento visual típico que el
+entorno de escritorio (KDE/GNOME/X11/Wayland) aplica a una ventana que
+deja de responder a los eventos de forma puntual: encola los clics de
+verdad y los reproduce en cuanto el proceso vuelve a atender al bucle
+de eventos, aterrizando sobre lo que haya en esa posición en ese
+momento -no sobre lo que había cuando se hizo clic-, lo que descarta
+un simple problema visual y apunta a un bloqueo síncrono real del
+hilo que corre el bucle de eventos de Qt/asyncio (`gui/app.py`, vía
+`qasync`).
+
+Diagnóstico por descarte, sin GUI (script de CLI con una tarea de
+"latido" que debería despertarse cada 20ms; un hueco mucho mayor
+delata un tramo de código que no cede el control): medir la creación
+de la `lt.session` de BitTorrent descartó ese camino (0.5-10 ms, nada
+que ver con el "zombi" ya arreglado del lado del cierre, ver más
+arriba en este mismo fichero); repetir la medición conectando a las
+cinco redes reales encontró el culpable en Gnutella2, con huecos de
+180-600 ms justo durante `connect_auto()`. Causa: `G2Backend.
+_connect_race()` prueba hasta 60 hubs candidatos EN PARALELO (caché
+local de hasta 200 hubs de sesiones anteriores, más los que reparta el
+GWebCache), y cada candidato que rechaza la conexión llamaba a
+`record_hub_failure(host, port)` -una lectura + una reescritura
+síncronas y completas de `g2_hub_cache.json` en disco- directamente
+dentro de la propia corrutina, sin pasar por ningún hilo aparte. Con
+la caché ya llena (200 entradas, el caso real de una instalación usada
+un tiempo) y una fracción grande de los candidatos ya muertos -algo
+esperado y ya documentado en el propio código-, decenas de esas
+lecturas+escrituras se disparaban casi a la vez, cada una del orden de
+1-2 ms pero todas seguidas y todas bloqueando el único hilo que
+también pinta la ventana y atiende los clics: la suma se notaba como
+el semi-bloqueo real que describía el usuario. Confirmado
+cuantitativamente con un script aparte: 30 llamadas sueltas a
+`record_hub_failure()` contra una caché de 200 entradas tardan ~46 ms
+en total, del orden correcto para explicar los huecos medidos si
+fallan varias decenas de candidatos en la misma ráfaga.
+
+Arreglado en `backends/g2_backend.py` sin tocar el comportamiento
+observable (mismos reintentos, mismo contador de fallos por hub, misma
+caché en disco): `_connect_race()` ya no llama a `record_hub_failure()`
+por cada candidato que falla, sino que acumula los pares (host,
+puerto) fallidos en una lista en memoria mientras dura la carrera
+paralela, y los aplica todos de una sola vez -una única lectura y una
+única escritura del caché- justo después de que termine
+`asyncio.gather(*workers)`, mediante una función nueva,
+`_record_hub_failures_batch()`. Al quedar sin ningún llamador,
+`record_hub_failure()` (la versión de "uno en uno") se eliminó del
+todo en vez de dejarla sin usar. Validado: (1) suite completa de
+pytest en verde (201 pruebas, sin regresiones); (2) el mismo script de
+"latido" de antes, repitiendo tres conexiones reales seguidas a
+Gnutella2 tras el arreglo, ya no muestra ningún hueco por encima de
+150 ms salvo un caso aislado (frente al 100% de las conexiones con
+huecos de 180-600 ms antes del arreglo) — mejora clara aunque no
+garantiza cero jitter de sistema operativo, que queda fuera del
+control del propio código Python.

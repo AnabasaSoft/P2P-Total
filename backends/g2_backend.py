@@ -131,20 +131,33 @@ def save_hub_cache(hubs: list[tuple[str, int]]) -> None:
     _save_hub_cache_raw(deduped)
 
 
-def record_hub_failure(host: str, port: int) -> None:
-    """Cuenta un intento de conexión fallido contra un hub que estaba en
-    la caché local. Al llegar a _HUB_CACHE_MAX_FAILS fallos seguidos se
-    borra de la caché, para no seguir perdiendo tiempo con un hub
-    muerto en cada connect_auto(). No hace nada si el hub no estaba en
-    la caché (p.ej. venía de GWebCache/X-Try-Hubs). Un único éxito
-    (_remember_hub) resetea el contador a 0."""
+def _record_hub_failures_batch(pairs: list[tuple[str, int]]) -> None:
+    """Cuenta un intento de conexión fallido contra cada hub de `pairs`
+    que estuviera en la caché local, con una sola lectura y una sola
+    escritura del caché en disco para todo el lote -pensada para
+    _connect_race(), que prueba hasta 60 candidatos en paralelo: llamar
+    a esto por cada fallo individual (en vez de una vez al final)
+    generaría una ráfaga de E/S de disco síncrona dentro del propio
+    bucle de eventos justo cuando muchos candidatos fallan casi a la
+    vez, notándose como microbloqueos reales de la GUI. Al llegar a
+    _HUB_CACHE_MAX_FAILS fallos acumulados se borra de la caché, para no
+    seguir perdiendo tiempo con un hub muerto en cada connect_auto(). No
+    hace nada con los hubs de `pairs` que no estuvieran ya en la caché
+    (p.ej. candidatos que venían de GWebCache/X-Try-Hubs). Un único
+    éxito (_remember_hub) resetea el contador de un hub a 0."""
+    if not pairs:
+        return
+    fails_by_key: dict[tuple[str, int], int] = {}
+    for host, port in pairs:
+        fails_by_key[(host, port)] = fails_by_key.get((host, port), 0) + 1
     raw = _load_hub_cache_raw()
     new_raw = []
     changed = False
     for e in raw:
-        if (e["host"], e["port"]) == (host, port):
+        key = (e["host"], e["port"])
+        if key in fails_by_key:
             changed = True
-            fails = e["fails"] + 1
+            fails = e["fails"] + fails_by_key[key]
             if fails >= _HUB_CACHE_MAX_FAILS:
                 continue
             e = {"host": e["host"], "port": e["port"], "fails": fails}
@@ -994,6 +1007,18 @@ class G2Backend(NetworkBackend):
         tried: set[tuple[str, int]] = set()
         winner: tuple[_G2Connection, str, int] | None = None
         last_error: Exception | None = None
+        # Los fallos se acumulan aquí en memoria mientras dura la carrera
+        # (hasta `max_concurrent` intentos a la vez) y se vuelcan al
+        # caché en disco de una sola vez al final, en vez de llamar a
+        # record_hub_failure() -una lectura + una escritura del JSON- por
+        # cada candidato que falla: con la caché local llena (hasta 200
+        # hubs) y una fracción grande de ellos ya muertos, eso suponía
+        # decenas de E/S de disco síncronas seguidas dentro del propio
+        # bucle de eventos justo cuando más candidatos fallan casi a la
+        # vez, y se notaba como microbloqueos reales de la GUI mientras
+        # se conecta a Gnutella2 (barra de menú oscurecida y clics que no
+        # abrían el menú hasta que la ráfaga terminaba).
+        failed_hubs: list[tuple[str, int]] = []
 
         async def worker() -> None:
             nonlocal winner, last_error
@@ -1008,7 +1033,7 @@ class G2Backend(NetworkBackend):
                     last_error = e
                     if debug:
                         print(f"  [debug] {host}:{port} no aceptó ({e})")
-                    record_hub_failure(host, port)
+                    failed_hubs.append((host, port))
                     for cand in getattr(e, "candidates", []):
                         if cand not in tried:
                             queue.append(cand)
@@ -1017,7 +1042,7 @@ class G2Backend(NetworkBackend):
                     last_error = e
                     if debug:
                         print(f"  [debug] {host}:{port} no aceptó ({e})")
-                    record_hub_failure(host, port)
+                    failed_hubs.append((host, port))
                     continue
 
                 if winner is None:
@@ -1028,6 +1053,7 @@ class G2Backend(NetworkBackend):
 
         workers = [asyncio.create_task(worker()) for _ in range(min(max_concurrent, len(queue)))]
         await asyncio.gather(*workers)
+        _record_hub_failures_batch(failed_hubs)
 
         if winner is None:
             raise ConnectionError(
