@@ -116,6 +116,22 @@ async def test_get_stats_reports_peer_encryption_and_utp_counters():
         await backend.disconnect()
 
 
+@pytest.mark.asyncio
+async def test_get_stats_reports_dht_global_nodes_and_session_totals():
+    """Punto 35: dht_global_nodes (tamaño estimado de toda la red DHT,
+    no solo los nodos con los que tenemos contacto directo) y los
+    totales de sesión -sin tráfico real todavía deben partir de 0."""
+    backend = TorrentBackend()
+    await backend.connect()
+    try:
+        stats = backend.get_stats()
+        assert stats["dht_global_nodes"] == 0
+        assert stats["total_downloaded"] == 0
+        assert stats["total_uploaded"] == 0
+    finally:
+        await backend.disconnect()
+
+
 def test_get_stats_empty_dict_when_not_connected():
     backend = TorrentBackend()
     assert backend.get_stats() == {}

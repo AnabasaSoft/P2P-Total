@@ -293,12 +293,14 @@ chat, verificación de integridad, proxy, IPv6 donde el protocolo lo
 permite, y todas las funciones de la sección [Funciones](#funciones)
 anteriores.
 
-La pestaña **Red** de la GUI tiene ahora una subpestaña por red, cada
-una con toda la información que su protocolo permite ofrecer: IP
-externa propia en Soulseek, nombre y usuarios del hub en DC++,
-usuarios/archivos anunciados por el servidor en eMule, y estado de
-cada tracker (URL, si funciona, semillas y pares) por torrent en
-BitTorrent.
+La pestaña **Red** de la GUI tiene ahora una subpestaña por red, con
+un dato por línea al estilo de los paneles de aMule (no una cadena de
+texto amontonada), mostrando toda la información que su protocolo
+permite ofrecer: IP externa propia en Soulseek, nombre y usuarios del
+hub en DC++, usuarios/archivos anunciados por el servidor y estado de
+Kademlia en eMule, y estado de cada tracker (URL, si funciona,
+semillas y pares) por torrent, tamaño estimado de toda la red DHT y
+totales de bytes de la sesión en BitTorrent.
 
 Sobre **BitTorrent** en particular: negocia cifrado de protocolo
 (MSE/PE, para dificultar el filtrado por parte de ISPs que limitan el

@@ -602,10 +602,18 @@ class TorrentBackend(NetworkBackend):
         return {
             "listen_port": self._session.listen_port(),
             "dht_nodes": s.dht_nodes,
+            # Tamaño estimado de toda la red DHT (no solo los nodos con
+            # los que tenemos contacto directo, `dht_nodes`) -el
+            # equivalente en BitTorrent a la "media de usuarios en la
+            # red" que aMule reporta para Kad, aunque aquí lo calcula
+            # la propia libtorrent a partir del espacio de IDs visto.
+            "dht_global_nodes": s.dht_global_nodes,
             "active_transfers": len(self._active),
             "connected_peers": connected_peers,
             "encrypted_peers": encrypted_peers,
             "utp_connections": s.utp_stats["num_connected"],
+            "total_downloaded": s.total_payload_download,
+            "total_uploaded": s.total_payload_upload,
         }
 
     # ---- internos ----

@@ -10,7 +10,7 @@ en una única columna de texto."""
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QHeaderView, QLabel, QMenu, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QFormLayout, QHeaderView, QLabel, QMenu, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core.download_manager import DownloadManager
@@ -18,7 +18,7 @@ from gui.connection_manager import (
     STATUS_CONNECTED, STATUS_CONNECTING, STATUS_DISCONNECTED, STATUS_ERROR, ConnectionManager,
 )
 from gui.i18n import t
-from gui.models_qt import NETWORK_LABEL_KEYS
+from gui.models_qt import NETWORK_LABEL_KEYS, _format_size
 from gui.theme import NETWORK_COLORS, STATUS_DOT_COLORS
 from gui.widgets.accessible_table import AccessibleTableWidget
 from gui.widgets.browse_host_dialog import BrowseHostDialog
@@ -53,26 +53,46 @@ _STAT_LABEL_KEYS = {
     "hub_users": "stat_hub_users",
     "server_users": "stat_server_users",
     "server_files": "stat_server_files",
+    "dht_global_nodes": "stat_dht_global_nodes",
+    "total_downloaded": "stat_total_downloaded",
+    "total_uploaded": "stat_total_uploaded",
+    "kad_status": "stat_kad_status",
 }
 
 _STAT_VALUE_KEYS = {
     "id_status": {"high": "id_status_high", "low": "id_status_low"},
     "kad_firewalled": {"open": "kad_firewalled_open", "firewalled": "kad_firewalled_yes"},
+    "kad_status": {"running": "kad_status_running", "not_running": "kad_status_not_running"},
 }
+
+# Campos en bytes que deben mostrarse con _format_size (p.ej. "1.2 GB")
+# en vez del entero crudo.
+_STAT_BYTE_KEYS = {"total_downloaded", "total_uploaded"}
 
 _POLL_INTERVAL_MS = 2000
 
 
-def _format_stats(stats: dict) -> str:
-    parts = []
+def _stat_rows(stats: dict) -> list[tuple[str, str]]:
+    """Un (etiqueta, valor) por cada campo presente, en vez de la
+    antigua cadena única unida por "·" -- al estilo de los paneles de
+    "Información del servidor"/Kad/ED2K de aMule, un dato por línea."""
+    rows = []
     for key, value in stats.items():
         if value is None:
             continue
         label = t(_STAT_LABEL_KEYS.get(key, key))
         value_key = _STAT_VALUE_KEYS.get(key, {}).get(value)
-        display_value = t(value_key) if value_key else value
-        parts.append(f"{label}: {display_value}")
-    return " · ".join(parts) if parts else t("network_not_connected")
+        if value_key:
+            display_value = t(value_key)
+        elif key in _STAT_BYTE_KEYS:
+            # _format_size devuelve "?" para <= 0 (pensado para tamaños
+            # de descarga desconocidos), pero aquí 0 es un valor válido
+            # y habitual nada más conectar -mostrarlo como "0 B".
+            display_value = "0 B" if value == 0 else _format_size(value)
+        else:
+            display_value = str(value)
+        rows.append((label, display_value))
+    return rows
 
 
 class _NetworkPage(QWidget):
@@ -89,10 +109,19 @@ class _NetworkPage(QWidget):
         self.status_label = QLabel(t("status_disconnected"))
         layout.addWidget(self.status_label)
 
-        self.details_label = QLabel(t("network_not_connected"))
-        self.details_label.setWordWrap(True)
-        self.details_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-        layout.addWidget(self.details_label)
+        # Un campo por línea (etiqueta a la izquierda, valor a la
+        # derecha), al estilo de los paneles "Información del
+        # servidor"/Kad/ED2K de aMule -- en vez de la antigua cadena
+        # única unida por "·" que amontonaba todos los datos en una
+        # sola línea. self._empty_label se muestra en su lugar cuando
+        # no hay ningún dato (red desconectada).
+        self._form_widget = QWidget()
+        self._form = QFormLayout(self._form_widget)
+        self._form.setLabelAlignment(Qt.AlignmentFlag.AlignLeft)
+        layout.addWidget(self._form_widget)
+
+        self._empty_label = QLabel(t("network_not_connected"))
+        layout.addWidget(self._empty_label)
 
         self.trackers_table: AccessibleTableWidget | None = None
         if network == Network.TORRENT:
@@ -125,7 +154,15 @@ class _NetworkPage(QWidget):
         self.status_label.setStyleSheet(f"color: {color}; font-weight: bold;")
 
     def set_details(self, stats: dict) -> None:
-        self.details_label.setText(_format_stats(stats))
+        while self._form.rowCount():
+            self._form.removeRow(0)
+        rows = _stat_rows(stats)
+        self._empty_label.setVisible(not rows)
+        self._form_widget.setVisible(bool(rows))
+        for label, value in rows:
+            value_label = QLabel(value)
+            value_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            self._form.addRow(f"{label}:", value_label)
 
     def set_trackers(self, entries: list[dict]) -> None:
         if self.trackers_table is None:

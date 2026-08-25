@@ -4659,6 +4659,71 @@ usuarios/archivos de un servidor eD2k real, trackers de un torrent
 real) queda, como el resto del proyecto, para cuando el usuario la
 ejercite a mano por su cuenta.
 
+#### Corrección posterior: la cadena unida por "·" era "cutre", faltaban datos
+
+El usuario, tras ver el resultado en vivo, aportó captura de las tres
+pestañas reales de aMule ("Información del servidor", "Información
+sobre ED2K", "Información sobre Kad") y una de nuestra subpestaña de
+eMule, y rechazó explícitamente el formato recién implementado:
+"mira la información de amule ... lo nuestro es cutre, todo en una
+línea y faltan datos... quiero algo parecido a lo de amule en todas
+las redes". Las tres pestañas de aMule muestran cada dato en su
+propia línea (etiqueta a la izquierda, valor a la derecha), sin tabla
+ni cadena unida.
+
+Dos cambios en respuesta:
+
+1. **Formato**: `gui/widgets/network_tab.py` sustituye la antigua
+   `_format_stats()` (cadena única unida por "·" en una `QLabel`) por
+   `_stat_rows()` + un `QFormLayout` (`self._form`) dentro de
+   `_NetworkPage`, con una fila por dato (reconstruida por completo en
+   cada `set_details()`, ya que `QFormLayout` no tiene un método de
+   vaciado en bloque: `while self._form.rowCount():
+   self._form.removeRow(0)`). Cuando no hay ningún dato (red
+   desconectada) se muestra en su lugar `self._empty_label`
+   ("network_not_connected").
+2. **Más datos**: se añadieron los campos más baratos de exponer sin
+   inventar nada que el protocolo no dé:
+   - **BitTorrent** (`backends/torrent_backend.py`): `dht_global_nodes`
+     (tamaño estimado de toda la red DHT, no solo los nodos con
+     contacto directo — el equivalente en BitTorrent a la "media de
+     usuarios en la red" que aMule reporta para Kad, vía
+     `session.status().dht_global_nodes`) y `total_downloaded`/
+     `total_uploaded` (bytes totales de la sesión, vía
+     `total_payload_download`/`total_payload_upload` del mismo
+     `session.status()` — API marcada como obsoleta en libtorrent
+     2.0.13.0 pero sigue siendo la única forma de leer estos
+     contadores).
+   - **eMule** (`backends/emule_backend.py`): `kad_status`
+     ("running"/"not_running"), a partir de si el socket UDP de Kad
+     está abierto (`self._udp_transport is not None`) — el equivalente
+     al "Estado de Kademlia: En ejecución" de aMule.
+
+   Los dos campos en bytes se formatean con `_format_size()`
+   (reutilizada de `gui/models_qt.py`, ya usada para el tamaño de las
+   descargas) vía el nuevo `_STAT_BYTE_KEYS`, con un caso especial
+   para 0 (`_format_size()` devuelve "?" para valores `<= 0`, pensado
+   para tamaños de descarga desconocidos, pero aquí 0 es un valor
+   válido y habitual nada más conectar, así que se muestra "0 B").
+
+   6 claves nuevas de i18n (`stat_dht_global_nodes`,
+   `stat_total_downloaded`, `stat_total_uploaded`, `stat_kad_status`,
+   `kad_status_running`, `kad_status_not_running`) traducidas a mano en
+   los 13 idiomas soportados.
+
+Validado: pytest completo en verde (208 tests, incluyendo el nuevo
+`test_get_stats_reports_dht_global_nodes_and_session_totals` en
+`tests/test_torrent_backend.py`; no se añadió test dedicado para
+`kad_status` porque ningún test de `test_emule_backend.py` instancia
+`EMuleBackend` directamente, igual que ya pasaba con
+`OP_SERVERSTATUS`/`_on_server_status()`); comprobación de que las 6
+claves nuevas existen en los 13 idiomas; y un script directo
+(`QT_QPA_PLATFORM=offscreen`) que instancia `_NetworkPage` para
+BitTorrent y para eMule con datos de ejemplo (incluidos los campos
+nuevos) y confirma que el `QFormLayout` renderiza cada dato en su
+propia fila, con la etiqueta y el valor traducidos correctamente
+(incluido el tamaño en bytes formateado, p.ej. "1.5 GB").
+
 ### Arreglo: el aviso de reinicio al cambiar de idioma salía en el idioma antiguo
 
 Bug real reportado por el usuario: al cambiar el idioma en Preferencias

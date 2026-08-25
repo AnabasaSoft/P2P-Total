@@ -2269,6 +2269,7 @@ class EMuleBackend(NetworkBackend):
             "known_peers": len(self._kad_contacts),
             "active_transfers": len(self._active),
         }
+        stats["kad_status"] = "running" if self._udp_transport is not None else "not_running"
         if self._server_writer is not None:
             stats["id_status"] = "high" if self.is_high_id else "low"
         if self._server_users is not None:
