@@ -52,6 +52,7 @@ from typing import Callable
 from urllib.parse import urlparse
 
 from core import upnp
+from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.config import _config_dir
 from core.models import Download, DownloadState, Network, SearchResult
@@ -1538,7 +1539,7 @@ class G2Backend(NetworkBackend):
 
             padded = sha1_b32 + "=" * (-len(sha1_b32) % 8)
             expected_sha1 = base64.b32decode(padded.upper())
-            got_sha1 = await asyncio.to_thread(_sha1_of_file, out_path)
+            got_sha1 = await run_in_daemon_thread(_sha1_of_file, out_path, name="g2-sha1-verify")
             if got_sha1 != expected_sha1:
                 return "verificación SHA1 fallida (fichero corrupto o incompleto)"
 

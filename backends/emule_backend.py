@@ -69,6 +69,7 @@ from urllib.parse import unquote, urlparse
 
 from core import upnp
 from core.aich import EMBLOCKSIZE, block_count, block_sha1, levels_to_part
+from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.config import _config_dir
 from core.md4 import md4
@@ -2186,7 +2187,9 @@ class EMuleBackend(NetworkBackend):
         # core/md4.py (obligada porque el MD4 de OpenSSL no está
         # disponible), llamarla directamente aquí bloquearía el event
         # loop/GUI durante toda la verificación en descargas grandes.
-        bad_parts = await asyncio.to_thread(_verify_download, out_path, file_hash, hashset, download.size_bytes)
+        bad_parts = await run_in_daemon_thread(
+            _verify_download, out_path, file_hash, hashset, download.size_bytes, name="emule-hash-verify"
+        )
         if not bad_parts:
             download.state = DownloadState.COMPLETED
         else:

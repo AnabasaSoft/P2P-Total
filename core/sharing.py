@@ -16,12 +16,12 @@ búsqueda contra este índice.
 import asyncio
 import hashlib
 import os
-import threading
 from base64 import b32decode
 from dataclasses import dataclass, field
 from pathlib import Path
 
 from core import database
+from core.async_utils import run_in_daemon_thread
 from core.md4 import md4
 
 # Cada cuántos ficheros (re)hasheados se publica el progreso: tanto hacia
@@ -31,34 +31,6 @@ from core.md4 import md4
 # app se cierra a mitad de un escaneo largo, p.ej. eMule/eD2k contra una
 # biblioteca de decenas de GB).
 _PUBLISH_EVERY = 100
-
-
-async def _run_in_daemon_thread(func, *args, **kwargs):
-    """Como `await asyncio.to_thread(func, *args, **kwargs)`, pero en un
-    hilo `daemon=True` propio en vez del `ThreadPoolExecutor` por
-    defecto de asyncio: los hilos de ese pool NO son daemon, así que el
-    intérprete de Python los espera al salir (vía `atexit`) -confirmado
-    en real: cerrar la app/un script de la CLI mientras `rescan()`
-    seguía hasheando en segundo plano dejaba el proceso colgado, sin
-    terminar, hasta que el escaneo completo (que puede tardar horas
-    contra una biblioteca grande) acababa por su cuenta. Con un hilo
-    daemon, el proceso puede cerrarse de inmediato aunque el escaneo se
-    corte a medias -no se pierde nada importante, porque la caché
-    persistente en SQLite ya guarda el progreso cada `_PUBLISH_EVERY`
-    ficheros (ver `SharedLibrary.rescan`)."""
-    loop = asyncio.get_event_loop()
-    future: asyncio.Future = loop.create_future()
-
-    def _runner() -> None:
-        try:
-            result = func(*args, **kwargs)
-        except BaseException as exc:  # noqa: BLE001 - se reenvía tal cual a quien espera
-            loop.call_soon_threadsafe(future.set_exception, exc)
-        else:
-            loop.call_soon_threadsafe(future.set_result, result)
-
-    threading.Thread(target=_runner, daemon=True, name="shared-library-scan").start()
-    return await future
 
 # Tamaño de "parte" eD2k (PARTSIZE en emule_backend.py): el hash eD2k de
 # un fichero de una sola parte es el MD4 del fichero completo; con dos o
@@ -208,7 +180,9 @@ class SharedLibrary:
     async def _background_scan(self) -> None:
         while True:
             need_sha1, need_ed2k = self._scan_need_sha1, self._scan_need_ed2k
-            await _run_in_daemon_thread(self.rescan, need_sha1=need_sha1, need_ed2k=need_ed2k)
+            await run_in_daemon_thread(
+                self.rescan, need_sha1=need_sha1, need_ed2k=need_ed2k, name="shared-library-scan"
+            )
             # Si nadie ha ampliado los requisitos mientras se escaneaba,
             # ya está todo cubierto y se puede parar; si sí (p.ej. eMule
             # conectó a mitad del escaneo de G2 y añadió need_ed2k), se

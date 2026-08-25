@@ -33,6 +33,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree
 
 from core import upnp
+from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.http_client import http_get
 from core.models import Download, DownloadState, Network, SearchResult
@@ -944,7 +945,7 @@ class DCPPBackend(NetworkBackend):
             # antemano el hash del fichero (el $SR no lo lleva), así que
             # esas descargas se quedan sin verificar (limitación real y
             # documentada, no un descuido).
-            got_tth = await asyncio.to_thread(tth_of_file, out_path)
+            got_tth = await run_in_daemon_thread(tth_of_file, out_path, name="dcpp-tth-verify")
             if got_tth != expected_tth:
                 download.state = DownloadState.ERROR
                 download.error_message = "Verificación TTH fallida (fichero corrupto o incompleto)"

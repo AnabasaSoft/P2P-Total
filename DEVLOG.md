@@ -3019,6 +3019,47 @@ reproduciendo el mismo escenario aislado 10 veces seguidas tras el
 arreglo: el proceso siempre termina en pocos segundos (entre 1 y 12s,
 frente a los 20-30s+ o cuelgue indefinido de antes) y sin errores.
 
+### Arreglo: el mismo zombi de "Salir" reaparecía en DC++, eMule y Gnutella2
+
+El usuario volvió a reportar el síntoma tras el arreglo anterior:
+"sigue el fallo de cerrar p2p-total desde el icono minimizado... el
+icono se quita de la barra de aplicaciones, pero el proceso se queda
+en la memoria". El arreglo previo solo cubría el caso de BitTorrent
+(el destructor síncrono de `lt.session`); investigando el resto del
+código se encontró el mismo patrón de fondo reaparecido de forma
+independiente en tres sitios más, los tres en la verificación de hash
+al completar una descarga: `backends/dcpp_backend.py` (TTH tras
+descargar por DC++), `backends/emule_backend.py` (MD4/eD2k tras
+descargar por eMule — añadido esta misma sesión, sin darme cuenta de
+que reintroducía el mismo bug ya arreglado una vez para
+`SharedLibrary.rescan()` en `core/sharing.py`) y `backends/
+g2_backend.py` (SHA1 tras descargar por Gnutella2). Los tres usaban
+`await asyncio.to_thread(...)` para no bloquear el bucle de eventos
+durante el hasheo — correcto para no congelar la GUI mientras la
+descarga está en curso, pero `asyncio.to_thread` ejecuta la función en
+el `ThreadPoolExecutor` por defecto de asyncio, cuyos hilos **no** son
+`daemon`, así que el intérprete de Python los espera al salir (vía
+`atexit`) igual que le pasaba a la sesión de libtorrent: si una
+descarga terminaba justo antes de pulsar "Salir" (o durante el cierre,
+por el mismo `asyncio.ensure_future(...)` sin esperar de
+`closeEvent()` documentado arriba), el hasheo en curso dejaba el
+proceso colgado hasta terminar, sin que el icono de la bandeja llegara
+a reflejarlo.
+
+Arreglado extrayendo el hilo `daemon=True` propio de `core/sharing.py`
+a un módulo nuevo y genérico, `core/async_utils.py`
+(`run_in_daemon_thread(func, *args, name=..., **kwargs)`, con un
+nombre de hilo configurable en vez del fijo `"shared-library-scan"` de
+antes), y sustituyendo los tres `asyncio.to_thread(...)` de arriba
+-además de la llamada que ya existía en `core/sharing.py`- por este
+helper común. Validado: batería de tests automatizados (`pytest`, 201
+pruebas, sin fallos) y una reproducción aislada por CLI que lanza un
+subproceso con una tarea de 30s en un hilo daemon vía
+`run_in_daemon_thread` y comprueba que el proceso Python padre
+termina igualmente en ~0.3s sin esperar a que la tarea acabe -mismo
+mecanismo, ya validado en real para BitTorrent, ahora también cubre
+DC++, eMule y Gnutella2.
+
 ### Función: conectar automáticamente cada red al arrancar la GUI
 
 Petición explícita del usuario: "añade una opción en cada pestaña de

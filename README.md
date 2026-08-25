@@ -281,7 +281,7 @@ así que están reimplementadas desde cero estudiando el protocolo real.
 
 ## Estado del proyecto y hoja de ruta
 
-**Versión actual: 1.0.**
+**Versión actual: 1.0.2** ([listado completo de releases](https://github.com/AnabasaSoft/P2P-Total/releases)).
 
 Las **cinco redes** (BitTorrent, Soulseek, DC++, Gnutella2, eMule/Kad)
 y la **GUI completa** están implementadas y validadas contra
@@ -321,7 +321,15 @@ de Windows y `.app` de macOS): descarga el paquete nuevo, lo instala y
 se relanza sola, sin que el usuario tenga que ir a la página de
 descargas a mano. En `.deb`/`.rpm`/`.flatpak` (gestionados por el
 sistema) sigue apareciendo el aviso de siempre con el enlace a la
-release. El registro técnico completo — arquitectura a fondo,
+release.
+
+Al pulsar "Salir" desde el icono de la bandeja, el icono desaparece y
+el proceso termina limpio siempre, con cualquier red conectada
+(BitTorrent, DC++, eMule/Kad o Gnutella2) y aunque una descarga esté
+verificando su hash justo en ese momento — antes se quedaba a veces
+colgado en memoria sin llegar a cerrarse.
+
+El registro técnico completo — arquitectura a fondo,
 notas de protocolo de cada red, cada bug real encontrado y cómo se
 validó cada función, y el backlog detallado punto por punto — vive en
 [`DEVLOG.md`](DEVLOG.md).
