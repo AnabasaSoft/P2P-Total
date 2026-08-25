@@ -107,14 +107,24 @@ class MainWindow(QMainWindow):
 
         self._connection_manager.autoconnect_configured_networks()
 
-        asyncio.ensure_future(self._check_for_update())
+        # Referencia guardada a propósito: si nadie la retiene, el bucle de
+        # asyncio solo guarda una referencia débil a la tarea y podría
+        # recolectarla antes de que termine (documentado así en la propia
+        # documentación de `asyncio.ensure_future`).
+        self._startup_update_check_task = asyncio.ensure_future(self._check_for_update())
 
     def _on_check_for_updates_clicked(self) -> None:
-        asyncio.ensure_future(self._check_for_update(silent=False))
+        self._manual_update_check_task = asyncio.ensure_future(self._check_for_update(silent=False))
 
     async def _check_for_update(self, silent: bool = True) -> None:
         config = load_config()
-        info = await check_for_update(proxy=config.proxy)
+        try:
+            info = await check_for_update(proxy=config.proxy, raise_errors=not silent)
+        except Exception as exc:
+            QMessageBox.warning(
+                self, t("update_dialog_title"), t("update_check_failed").format(error=str(exc)),
+            )
+            return
         if info is None:
             if not silent:
                 QMessageBox.information(self, t("update_dialog_title"), t("update_check_up_to_date"))

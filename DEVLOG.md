@@ -5014,3 +5014,62 @@ nuevo → "Salir" desde la bandeja (`_on_quit()`), y comprueba que
 temporalmente con `git stash`) que el proceso no llegaba a un cierre
 limpio en el mismo escenario, y con el arreglo aplicado el bucle
 termina y el script imprime su mensaje de éxito.
+
+### Arreglo: el botón "Buscar actualizaciones" tragaba errores de red y decía "ya tienes la última versión"
+
+El usuario reportó que, tras publicar correctamente la release v1.0.6
+con `actualiza.sh` (build de CI en verde, release real publicada), ni
+la comprobación automática al arrancar ni el botón manual "Buscar
+actualizaciones" la detectaban como nueva. Repasado el código de
+`core/update_checker.py`, `core/http_client.py` y el workflow de CI,
+y reproducido en varias simulaciones realistas (arrancando la
+`MainWindow` real con `qasync` contra la API real de GitHub, forzando
+`VERSION` antigua) el mecanismo de comprobación funcionaba
+correctamente en todos los casos probados aquí, lo que descartaba un
+fallo estructural en la lógica de comparación de versiones o en el
+cliente HTTP a mano.
+
+La pista real estaba en el diseño de `check_for_update()`: envuelve
+toda la petición en `try/except Exception: pass` y devuelve `None`
+ante *cualquier* fallo (sin red, GitHub caído, límite de peticiones
+anónimas agotado, error SSL...) — a propósito, para que un problema de
+red nunca impida arrancar la app. El problema es que ese `None`
+también es exactamente el mismo valor que devuelve cuando de verdad no
+hay ninguna versión nueva, así que el botón manual mostraba siempre
+"ya tienes instalada la última versión", **incluso cuando la
+comprobación había fallado por un error real** — indistinguible para
+quien lo pulsa, y por tanto imposible de diagnosticar a distancia sin
+ver el error de verdad.
+
+Arreglado sin tocar el comportamiento silencioso de la comprobación
+automática al arrancar (`check_for_update(raise_errors=False)`, por
+defecto, sigue tragando cualquier excepción igual que antes): se le
+añadió el parámetro `raise_errors: bool`, y el botón manual llama con
+`raise_errors=True`, capturando la excepción real en
+`MainWindow._check_for_update()` para mostrarla en un
+`QMessageBox.warning()` con el texto del error (nueva clave de
+traducción `update_check_failed`, en los 13 idiomas), en vez de la
+respuesta ambigua de siempre. De paso, se guardó la referencia de la
+`Task` de `asyncio.ensure_future()` de ambas comprobaciones (la
+automática y la manual) en atributos de `self` — un
+`fire-and-forget` sin referencia guardada corre el riesgo, documentado
+así en la propia documentación de asyncio, de que el bucle de eventos
+recolija la tarea antes de que termine si nada más la retiene; no se
+confirmó como causa raíz en las pruebas realizadas aquí, pero es una
+corrección defensiva razonable de todos modos, precisamente sobre el
+mismo camino de código bajo sospecha.
+
+Validado con dos pruebas dirigidas simulando un fallo de red real
+(`ConnectionError` inyectada con `unittest.mock`): (1) contra
+`check_for_update()` directamente, confirmando que
+`raise_errors=False` sigue devolviendo `None` en silencio y que
+`raise_errors=True` propaga la excepción real; (2) contra
+`MainWindow._check_for_update()` completo (con `qasync` sobre
+`QT_QPA_PLATFORM=offscreen`), confirmando que el `QMessageBox.warning`
+que ve el usuario contiene el texto real del error simulado en vez del
+mensaje de "ya tienes la última versión". **Pendiente**: si al usuario
+le sigue sin funcionar tras esta corrección, ahora el propio botón le
+mostrará el motivo exacto del fallo (en vez de un silencio ambiguo),
+lo que debería bastar para identificar la causa real definitiva
+(¿proxy mal configurado?, ¿DNS/firewall local?, ¿otra cosa?) en el
+siguiente intento.

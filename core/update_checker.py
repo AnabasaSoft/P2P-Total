@@ -37,11 +37,19 @@ def _parse_version(tag: str) -> tuple[int, ...]:
     return tuple(parts)
 
 
-async def check_for_update(proxy: ProxyConfig | None = None, timeout: float = 8.0) -> UpdateInfo | None:
+async def check_for_update(
+    proxy: ProxyConfig | None = None, timeout: float = 8.0, raise_errors: bool = False,
+) -> UpdateInfo | None:
     """Devuelve un `UpdateInfo` si GitHub tiene publicado un release más
-    reciente que `VERSION`, o `None` si no lo hay o si la comprobación
-    falla (sin conexión, GitHub caído, límite de peticiones anónimas
-    agotado...) — nunca debe impedir que la app arranque."""
+    reciente que `VERSION`, o `None` si no lo hay. Con `raise_errors=False`
+    (comprobación automática al arrancar), cualquier fallo (sin conexión,
+    GitHub caído, límite de peticiones anónimas agotado...) se traga y
+    devuelve `None` igual que "no hay actualización" — nunca debe impedir
+    que la app arranque. Con `raise_errors=True` (botón manual "Buscar
+    actualizaciones"), esos mismos fallos se propagan tal cual para que
+    quien llama pueda distinguir "ya tienes la última versión" de "la
+    comprobación ha fallado por X motivo" y mostrárselo a quien lo pulsó
+    -antes ambos casos eran indistinguibles y confundían al usuario-."""
     try:
         body = await http_get(
             _RELEASES_API_URL, timeout=timeout, proxy=proxy,
@@ -58,5 +66,6 @@ async def check_for_update(proxy: ProxyConfig | None = None, timeout: float = 8.
                 assets=data.get("assets") or [],
             )
     except Exception:
-        pass
+        if raise_errors:
+            raise
     return None

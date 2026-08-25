@@ -393,6 +393,7 @@ TRANSLATIONS = {
         "update_download_failed": "No se ha podido descargar la actualización. Prueba a descargarla a mano desde la página de GitHub.",
         "update_apply_failed": "Se ha descargado la actualización pero no se ha podido instalar. Prueba a instalarla a mano desde el fichero descargado.",
         "update_check_up_to_date": "Ya tienes instalada la última versión disponible.",
+        "update_check_failed": "No se pudo comprobar si hay actualizaciones: {error}",
 
         # --- Barra de estado ---
         "statusbar_ready": "Listo",
@@ -802,6 +803,7 @@ TRANSLATIONS = {
         "update_download_failed": "Could not download the update. Try downloading it manually from the GitHub page.",
         "update_apply_failed": "The update was downloaded but could not be installed. Try installing it manually from the downloaded file.",
         "update_check_up_to_date": "You already have the latest version installed.",
+        "update_check_failed": "Could not check for updates: {error}",
 
         "statusbar_ready": "Ready",
         "statusbar_connected_count": "{n}/{total} networks connected",
@@ -1210,6 +1212,7 @@ TRANSLATIONS = {
         "update_download_failed": "Ezin izan da eguneraketa deskargatu. Saiatu eskuz deskargatzen GitHub-eko orritik.",
         "update_apply_failed": "Eguneraketa deskargatu da baina ezin izan da instalatu. Saiatu eskuz instalatzen deskargatutako fitxategitik.",
         "update_check_up_to_date": "Dagoeneko azken bertsioa instalatuta duzu.",
+        "update_check_failed": "Ezin izan da eguneraketarik dagoen egiaztatu: {error}",
 
         "statusbar_ready": "Prest",
         "statusbar_connected_count": "{n}/{total} sare konektatuta",
@@ -1616,6 +1619,7 @@ TRANSLATIONS = {
         "update_download_failed": "Impossible de télécharger la mise à jour. Essayez de la télécharger manuellement depuis la page GitHub.",
         "update_apply_failed": "La mise à jour a été téléchargée mais n'a pas pu être installée. Essayez de l'installer manuellement à partir du fichier téléchargé.",
         "update_check_up_to_date": "Vous avez déjà la dernière version installée.",
+        "update_check_failed": "Impossible de vérifier les mises à jour : {error}",
 
         "statusbar_ready": "Prêt",
         "statusbar_connected_count": "{n}/{total} réseaux connectés",
@@ -2020,6 +2024,7 @@ TRANSLATIONS = {
         "update_download_failed": "Impossibile scaricare l'aggiornamento. Prova a scaricarlo manualmente dalla pagina GitHub.",
         "update_apply_failed": "L'aggiornamento è stato scaricato ma non è stato possibile installarlo. Prova a installarlo manualmente dal file scaricato.",
         "update_check_up_to_date": "Hai già installato l'ultima versione disponibile.",
+        "update_check_failed": "Impossibile controllare gli aggiornamenti: {error}",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} reti connesse",
@@ -2423,6 +2428,7 @@ TRANSLATIONS = {
         "update_download_failed": "Não foi possível descarregar a atualização. Tente descarregá-la manualmente a partir da página do GitHub.",
         "update_apply_failed": "A atualização foi descarregada mas não foi possível instalá-la. Tente instalá-la manualmente a partir do ficheiro descarregado.",
         "update_check_up_to_date": "Já tem instalada a versão mais recente.",
+        "update_check_failed": "Não foi possível verificar se há atualizações: {error}",
 
         "statusbar_ready": "Pronto",
         "statusbar_connected_count": "{n}/{total} redes ligadas",
@@ -2829,6 +2835,7 @@ TRANSLATIONS = {
         "update_download_failed": "Das Update konnte nicht heruntergeladen werden. Versuche es manuell über die GitHub-Seite herunterzuladen.",
         "update_apply_failed": "Das Update wurde heruntergeladen, konnte aber nicht installiert werden. Versuche es manuell aus der heruntergeladenen Datei zu installieren.",
         "update_check_up_to_date": "Sie haben bereits die neueste Version installiert.",
+        "update_check_failed": "Es konnte nicht nach Updates gesucht werden: {error}",
 
         "statusbar_ready": "Bereit",
         "statusbar_connected_count": "{n}/{total} Netzwerke verbunden",
@@ -3232,6 +3239,7 @@ TRANSLATIONS = {
         "update_download_failed": "No s'ha pogut descarregar l'actualització. Prova de descarregar-la manualment des de la pàgina de GitHub.",
         "update_apply_failed": "L'actualització s'ha descarregat però no s'ha pogut instal·lar. Prova d'instal·lar-la manualment des del fitxer descarregat.",
         "update_check_up_to_date": "Ja tens instal·lada la darrera versió disponible.",
+        "update_check_failed": "No s'ha pogut comprovar si hi ha actualitzacions: {error}",
 
         "statusbar_ready": "Preparat",
         "statusbar_connected_count": "{n}/{total} xarxes connectades",
@@ -3635,6 +3643,7 @@ TRANSLATIONS = {
         "update_download_failed": "Non se puido descargar a actualización. Proba a descargala manualmente desde a páxina de GitHub.",
         "update_apply_failed": "A actualización descargouse pero non se puido instalar. Proba a instalala manualmente desde o ficheiro descargado.",
         "update_check_up_to_date": "Xa tes instalada a última versión dispoñible.",
+        "update_check_failed": "Non se puido comprobar se hai actualizacións: {error}",
 
         "statusbar_ready": "Listo",
         "statusbar_connected_count": "{n}/{total} redes conectadas",
@@ -4039,6 +4048,7 @@ TRANSLATIONS = {
         "update_download_failed": "Не удалось загрузить обновление. Попробуйте скачать его вручную со страницы GitHub.",
         "update_apply_failed": "Обновление загружено, но не удалось его установить. Попробуйте установить его вручную из скачанного файла.",
         "update_check_up_to_date": "У вас уже установлена последняя версия.",
+        "update_check_failed": "Не удалось проверить наличие обновлений: {error}",
 
         "statusbar_ready": "Готово",
         "statusbar_connected_count": "{n}/{total} сетей подключено",
@@ -4428,6 +4438,7 @@ TRANSLATIONS = {
         "update_download_failed": "无法下载更新。请尝试从 GitHub 页面手动下载。",
         "update_apply_failed": "更新已下载，但无法安装。请尝试从已下载的文件手动安装。",
         "update_check_up_to_date": "您已安装最新版本。",
+        "update_check_failed": "无法检查更新：{error}",
 
         "statusbar_ready": "就绪",
         "statusbar_connected_count": "{n}/{total} 个网络已连接",
@@ -4823,6 +4834,7 @@ TRANSLATIONS = {
         "update_download_failed": "更新をダウンロードできませんでした。GitHub のページから手動でダウンロードしてください。",
         "update_apply_failed": "更新はダウンロードされましたが、インストールできませんでした。ダウンロードしたファイルから手動でインストールしてください。",
         "update_check_up_to_date": "最新バージョンが既にインストールされています。",
+        "update_check_failed": "更新を確認できませんでした: {error}",
 
         "statusbar_ready": "準備完了",
         "statusbar_connected_count": "{n}/{total} ネットワークに接続中",
@@ -5224,6 +5236,7 @@ TRANSLATIONS = {
         "update_download_failed": "업데이트를 다운로드할 수 없습니다. GitHub 페이지에서 수동으로 다운로드해 보세요.",
         "update_apply_failed": "업데이트가 다운로드되었지만 설치할 수 없습니다. 다운로드한 파일에서 수동으로 설치해 보세요.",
         "update_check_up_to_date": "이미 최신 버전이 설치되어 있습니다.",
+        "update_check_failed": "업데이트를 확인할 수 없습니다: {error}",
 
         "statusbar_ready": "준비됨",
         "statusbar_connected_count": "{n}/{total}개 네트워크 연결됨",
