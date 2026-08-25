@@ -1,5 +1,3 @@
-prueba
-
 <p align="center">
   <img src="Logo.png" alt="P2P Total" width="420">
 </p>
@@ -178,7 +176,9 @@ velocidad globales y por descarga.
   portable** (todo junto al ejecutable, sin tocar `~/.config`), pensado
   para llevar el programa entero en un pendrive.
 - Aviso de nueva versión disponible al arrancar (comprobado contra los
-  releases publicados en GitHub), con acceso directo a la descarga.
+  releases publicados en GitHub), con acceso directo a la descarga, y
+  botón "Buscar actualizaciones" en el menú Ayuda para comprobarlo
+  también a mano en cualquier momento.
 - Accesibilidad: nombres accesibles para lectores de pantalla en
   tablas y campos, menú contextual navegable con Mayús+F10 igual que
   con el botón derecho del ratón, y atajo Supr para borrar descargas
@@ -283,7 +283,7 @@ así que están reimplementadas desde cero estudiando el protocolo real.
 
 ## Estado del proyecto y hoja de ruta
 
-**Versión actual: 1.0.2** ([listado completo de releases](https://github.com/AnabasaSoft/P2P-Total/releases)).
+**Versión actual: 1.0.6** ([listado completo de releases](https://github.com/AnabasaSoft/P2P-Total/releases)).
 
 Las **cinco redes** (BitTorrent, Soulseek, DC++, Gnutella2, eMule/Kad)
 y la **GUI completa** están implementadas y validadas contra
@@ -330,6 +330,14 @@ el proceso termina limpio siempre, con cualquier red conectada
 (BitTorrent, DC++, eMule/Kad o Gnutella2) y aunque una descarga esté
 verificando su hash justo en ese momento — antes se quedaba a veces
 colgado en memoria sin llegar a cerrarse.
+
+La comprobación de actualizaciones (automática y manual) también
+funciona ya correctamente en el paquete instalado sobre **cualquier
+distribución Linux**, no solo en la usada para compilarlo: antes, en
+distros distintas de Ubuntu (openSUSE, Fedora...) fallaba con un error
+de verificación de certificado SSL porque el ejecutable empaquetado
+llevaba grabada la ruta del almacén de certificados de la distro de
+compilación.
 
 El registro técnico completo — arquitectura a fondo,
 notas de protocolo de cada red, cada bug real encontrado y cómo se
