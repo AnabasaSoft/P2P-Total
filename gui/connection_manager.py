@@ -186,7 +186,13 @@ class ConnectionManager(QObject):
                 proxy=config.proxy,
             )
             await backend.connect()
-            if config.gnutella2.default_hub_host:
+            if hub_override is not None:
+                host, port = hub_override
+                try:
+                    await backend.connect_to_hub_with_fallback(host, port, timeout=15.0)
+                except (OSError, ConnectionError, EOFError):
+                    await backend.connect_auto()
+            elif config.gnutella2.default_hub_host:
                 try:
                     await backend.connect_to_hub_with_fallback(
                         config.gnutella2.default_hub_host, config.gnutella2.default_hub_port, timeout=15.0
@@ -207,7 +213,10 @@ class ConnectionManager(QObject):
                 obfuscation=config.emule.obfuscation,
             )
             await backend.connect()
-            if config.emule.default_server_host:
+            if hub_override is not None:
+                host, port = hub_override
+                await backend.connect_to_server(host, port, timeout=15.0)
+            elif config.emule.default_server_host:
                 await backend.connect_to_server(
                     config.emule.default_server_host, config.emule.default_server_port, timeout=15.0
                 )

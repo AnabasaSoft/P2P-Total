@@ -4554,6 +4554,16 @@ búsqueda/descarga; falta la parte social):
     pestaña Red" en "Estado actual" para el detalle completo de la
     implementación y su validación).
 
+36. ✅ Lista de servidores/hubs conocidos con número de usuarios y de
+    ficheros, y clic derecho para conectar directamente (añadido
+    2026-08-25, a petición explícita del usuario: "hay que añadir
+    lista de servidores conocidos, con vista de número de archivos y
+    números de usuarios y posibilidad clic derecho en el servidor
+    deseado, y conectar (en todas las redes posibles"). Completo (ver
+    "Punto 36 del backlog: lista de servidores conocidos con clic
+    derecho para conectar" en "Estado actual" para el detalle completo
+    de la implementación y su validación).
+
 ### Punto 35 del backlog: subpestañas por red en la pestaña Red
 
 Implementado backend por backend según el ámbito fijado al proponer el
@@ -4723,6 +4733,100 @@ BitTorrent y para eMule con datos de ejemplo (incluidos los campos
 nuevos) y confirma que el `QFormLayout` renderiza cada dato en su
 propia fila, con la etiqueta y el valor traducidos correctamente
 (incluido el tamaño en bytes formateado, p.ej. "1.5 GB").
+
+### Punto 36 del backlog: lista de servidores conocidos con clic derecho para conectar
+
+Petición explícita del usuario, tras ver el resultado del punto 35:
+"hay que añadir lista de servidores conocidos, con vista de número de
+archivos y números de usuarios y posibilidad clic derecho en el
+servidor deseado, y conectar (en todas las redes posibles)" — al
+estilo de la pestaña "Servidores" de aMule.
+
+Alcance real por red, según lo que el protocolo de cada una permite:
+
+- **eMule/eD2k**: el caso más directo, la lista pública `server.met`
+  (`SERVER_MET_URL`) es exactamente esto — una lista de servidores con
+  metadatos. `parse_server_met()` (`backends/emule_backend.py`) antes
+  leía y descartaba los tags de cada entrada (solo se quedaba con
+  host/port); ahora extrae también `name` (`ST_SERVERNAME = 0x01`),
+  `description` (`ST_DESCRIPTION = 0x02`), `ping` (`ST_PING = 0x03`),
+  `max_users` (`ST_MAXUSERS = 0x87`), `soft_files`/`hard_files`
+  (`ST_SOFTFILES = 0x88`/`ST_HARDFILES = 0x89`) cuando el propio
+  fichero los trae — depende de quién mantenga la lista pública
+  descargada, no es un dato en vivo (para eso está ya
+  `OP_SERVERSTATUS` del servidor conectado, punto 35). Nueva función
+  de módulo `fetch_public_server_list()` (antes solo existía como
+  método de instancia `discover_servers()`, que ahora delega en ella)
+  para poder abrir la lista desde la GUI sin necesitar ya un
+  `EMuleBackend` conectado.
+- **DC++**: ya existía `HubListDialog` (punto 11 del backlog) con
+  usuarios por hub, pero solo se usaba desde Preferencias para fijar
+  el hub por defecto (requería Guardar y reconectar). Se le añadió un
+  menú contextual de clic derecho ("Conectar") sobre la tabla, que
+  hace lo mismo que el doble clic/botón Aceptar ya existentes:
+  selecciona la fila y cierra el diálogo con `selected_hub` relleno.
+  El número de ficheros no está disponible: el agregador tipo
+  hublist.org (`HUB_LIST_URL`) solo publica bytes compartidos
+  totales (`Shared`), no un recuento de ficheros.
+- **Gnutella2**: no hay servidores con metadatos como en eD2k (el
+  único mecanismo de descubrimiento real es GWebCache, que solo da
+  pares host:puerto, sin usuarios/ficheros/ping — mismo límite ya
+  documentado para la subpestaña de detalles del punto 35). Aun así
+  se ofrece una lista útil: caché local de hubs de sesiones anteriores
+  (`load_hub_cache()`) combinada con lo que devuelvan ahora mismo los
+  GWebCache (`discover_hubs()`, ya existente), deduplicada.
+- **Soulseek**: fuera de alcance — solo existe un servidor central
+  real (`server.slsknet.org`), no hay "servidores conocidos" entre los
+  que elegir (mismo motivo ya documentado en el punto 35 para
+  descartar un recuento de "usuarios totales del servidor").
+- **BitTorrent**: fuera de alcance — no tiene el concepto de
+  "servidor", solo trackers por torrent, ya mostrados en su propia
+  subpestaña desde el punto 35.
+
+En la GUI: nuevo diálogo genérico `gui/widgets/known_servers_dialog.py`
+(`KnownServersDialog`), reutilizado por eMule y Gnutella2 — tabla con
+Nombre/Dirección/Usuarios/Ficheros/Ping/Descripción (los campos sin
+dato se muestran como "—", no se inventan), filtro de texto igual que
+`HubListDialog`, clic derecho o doble clic o botón Aceptar sobre una
+fila para conectar. `gui/widgets/network_tab.py` añade un botón
+"Servidores conocidos…" en la subpestaña de las tres redes con
+concepto de servidor (DC++, Gnutella2, eMule) que abre el diálogo
+correspondiente (`HubListDialog` para DC++, `KnownServersDialog` con
+el *loader* de cada red para las otras dos) y, al elegir uno, llama a
+`ConnectionManager.connect_network(red, hub_override=(host, port))`
+tras desconectar primero si ya había una conexión activa a esa red.
+`gui/connection_manager.py` ya aceptaba `hub_override` para DC++ (del
+punto 12, enlaces `dchub://`); se extendió el mismo parámetro a
+Gnutella2 (antes solo leía el hub por defecto de Preferencias) y eMule
+(antes solo leía el servidor por defecto o usaba `connect_auto()`).
+
+16 claves nuevas de i18n (`dlg_known_servers_title`,
+`msg_loading_servers`, `placeholder_filter_servers`,
+`acc_server_filter`, `hint_connect_server`, `col_server_name`,
+`col_server_address`, `col_server_users`, `col_server_files`,
+`col_server_ping`, `col_server_description`, `msg_servers_error`,
+`msg_servers_empty`, `status_servers_count`, `ctx_connect_server`,
+`btn_browse_servers`) traducidas a mano en los 13 idiomas soportados;
+`ctx_connect_server` se reutiliza también en el nuevo menú contextual
+de `HubListDialog`.
+
+Validado: pytest completo en verde (211 tests, incluyendo tres tests
+nuevos de `parse_server_met()` en `tests/test_emule_backend.py` que
+construyen un `server.met` sintético en memoria con `write_tag()` y
+comprueban la extracción de host/port/name/description/ping/
+max_users/soft_files/hard_files, una entrada sin tags con solo host/
+port, y el rechazo por byte de cabecera incorrecto); comprobación de
+que las 16 claves nuevas existen en los 13 idiomas; y varios scripts
+directos (`QT_QPA_PLATFORM=offscreen`) que confirman que `NetworkTab`
+construye el botón "Servidores conocidos…" solo en las tres
+subpestañas correctas (no en Soulseek/BitTorrent), que `HubListDialog`
+expone el nuevo menú contextual, y que `KnownServersDialog` rellena su
+tabla correctamente tanto con una entrada completa (todos los campos)
+como con una que solo trae host/port (el resto se muestra como "—").
+La validación con tráfico real de cada red (servidores eD2k reales
+del `server.met` público, hubs DC++ reales, hubs G2 reales vía
+GWebCache) queda, como el resto del proyecto, para cuando el usuario
+la ejercite a mano por su cuenta.
 
 ### Arreglo: el aviso de reinicio al cambiar de idioma salía en el idioma antiguo
 

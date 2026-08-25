@@ -7,12 +7,16 @@ tabla plana -- así cabe información específica de cada protocolo
 (p.ej. el estado de los trackers de BitTorrent) sin amontonarla toda
 en una única columna de texto."""
 
+import asyncio
+
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
-    QFormLayout, QHeaderView, QLabel, QMenu, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
+    QFormLayout, QHeaderView, QLabel, QMenu, QPushButton, QTableWidget, QTableWidgetItem, QTabWidget, QVBoxLayout,
+    QWidget,
 )
 
+from core.config import load_config
 from core.download_manager import DownloadManager
 from gui.connection_manager import (
     STATUS_CONNECTED, STATUS_CONNECTING, STATUS_DISCONNECTED, STATUS_ERROR, ConnectionManager,
@@ -22,7 +26,16 @@ from gui.models_qt import NETWORK_LABEL_KEYS, _format_size
 from gui.theme import NETWORK_COLORS, STATUS_DOT_COLORS
 from gui.widgets.accessible_table import AccessibleTableWidget
 from gui.widgets.browse_host_dialog import BrowseHostDialog
+from gui.widgets.hub_list_dialog import HubListDialog
+from gui.widgets.known_servers_dialog import KnownServersDialog
 from core.models import Network
+
+# Redes con un concepto real de "servidor/hub conocido al que elegir
+# conectarse" -Soulseek solo tiene un servidor central real y
+# BitTorrent no tiene "servidores", solo trackers por torrent (ya
+# mostrados en su propia subpestaña), así que ninguna de las dos
+# ofrece el botón de "Servidores conocidos...".
+_NETWORKS_WITH_SERVER_LIST = {Network.DCPP, Network.GNUTELLA2, Network.EMULE}
 
 _STATUS_LABEL_KEYS = {
     STATUS_DISCONNECTED: "status_disconnected",
@@ -108,6 +121,11 @@ class _NetworkPage(QWidget):
 
         self.status_label = QLabel(t("status_disconnected"))
         layout.addWidget(self.status_label)
+
+        self.browse_servers_button: QPushButton | None = None
+        if network in _NETWORKS_WITH_SERVER_LIST:
+            self.browse_servers_button = QPushButton(t("btn_browse_servers"))
+            layout.addWidget(self.browse_servers_button)
 
         # Un campo por línea (etiqueta a la izquierda, valor a la
         # derecha), al estilo de los paneles "Información del
@@ -198,6 +216,10 @@ class NetworkTab(QWidget):
             self._pages[network] = page
             self._tabs.addTab(page, t(NETWORK_LABEL_KEYS[network]))
             self._tabs.setTabIcon(self._tabs.indexOf(page), _network_color_icon(network))
+            if page.browse_servers_button is not None:
+                page.browse_servers_button.clicked.connect(
+                    lambda _checked=False, n=network: self._on_browse_servers(n)
+                )
 
         # Explorar hub (punto 10 del backlog, solo Gnutella2): único
         # botón contextual que sigue teniendo sentido tras el rediseño,
@@ -229,6 +251,33 @@ class NetworkTab(QWidget):
         if torrent_page is not None:
             torrent_page.set_trackers(self._download_manager.list_active_torrent_trackers())
 
+    def _on_browse_servers(self, network: Network) -> None:
+        """Punto 36 del backlog: lista de servidores/hubs conocidos con
+        clic derecho (o doble clic/botón Aceptar) para conectar
+        directamente, al estilo de la pestaña "Servidores" de aMule --
+        sin pasar por Preferencias, a diferencia del flujo ya existente
+        de HubListDialog desde el diálogo de Ajustes."""
+        if network == Network.DCPP:
+            dialog = HubListDialog(self)
+            if dialog.exec() and dialog.selected_hub is not None:
+                hub = dialog.selected_hub
+                asyncio.ensure_future(self._connect_with_override(network, hub.host, hub.port))
+        elif network == Network.EMULE:
+            dialog = KnownServersDialog(_load_emule_servers, self)
+            if dialog.exec() and dialog.selected_server is not None:
+                host, port = dialog.selected_server
+                asyncio.ensure_future(self._connect_with_override(network, host, port))
+        elif network == Network.GNUTELLA2:
+            dialog = KnownServersDialog(_load_g2_hubs, self)
+            if dialog.exec() and dialog.selected_server is not None:
+                host, port = dialog.selected_server
+                asyncio.ensure_future(self._connect_with_override(network, host, port))
+
+    async def _connect_with_override(self, network: Network, host: str, port: int) -> None:
+        if self._manager.is_connected(network):
+            await self._manager.disconnect_network(network)
+        await self._manager.connect_network(network, hub_override=(host, port))
+
     def _on_g2_context_menu(self, pos) -> None:
         network = Network.GNUTELLA2
         backend = self._manager.get_backend(network)
@@ -249,6 +298,52 @@ class NetworkTab(QWidget):
             dialog = BrowseHostDialog(self._download_manager, host, port, self)
             dialog.download_requested.connect(self.download_requested.emit)
             dialog.exec()
+
+
+async def _load_emule_servers() -> list[dict]:
+    """server.met público -host/port siempre, y name/description/ping/
+    usuarios/ficheros cuando el propio fichero los trae (depende de
+    quién mantenga la lista pública descargada, no es un dato en
+    vivo)."""
+    from backends.emule_backend import fetch_public_server_list
+
+    config = load_config()
+    raw = await fetch_public_server_list(proxy=config.proxy)
+    return [
+        {
+            "name": entry.get("name"),
+            "host": entry["host"],
+            "port": entry["port"],
+            "users": entry.get("max_users"),
+            "files": entry.get("hard_files", entry.get("soft_files")),
+            "ping": entry.get("ping"),
+            "description": entry.get("description"),
+        }
+        for entry in raw
+    ]
+
+
+async def _load_g2_hubs() -> list[dict]:
+    """Hubs G2 conocidos: caché local de sesiones anteriores + los que
+    devuelvan ahora mismo los GWebCache -sin usuarios/ficheros/ping,
+    porque ese dato no existe en el protocolo G2 real (mismo límite ya
+    documentado en la subpestaña de detalles del punto 35)."""
+    from backends.g2_backend import discover_hubs, load_hub_cache
+
+    config = load_config()
+    cached = load_hub_cache()
+    try:
+        discovered = await discover_hubs(proxy=config.proxy)
+    except Exception:
+        discovered = []
+    seen: set[tuple[str, int]] = set()
+    entries = []
+    for host, port in list(cached) + discovered:
+        if (host, port) in seen:
+            continue
+        seen.add((host, port))
+        entries.append({"host": host, "port": port})
+    return entries
 
 
 def _network_color_icon(network: Network) -> QIcon:

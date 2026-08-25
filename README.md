@@ -157,6 +157,10 @@ velocidad globales y por descarga.
 - Pestañas de Búsqueda (con sub-pestañas independientes por búsqueda),
   Transferencias, Red (detalle de conexión en vivo por red), Chat,
   Alertas y Estadísticas.
+- Lista de servidores/hubs conocidos (DC++, Gnutella2 y eMule) con
+  usuarios y ficheros compartidos cuando el protocolo los expone,
+  filtro de texto, y clic derecho para conectar directamente sin
+  pasar por Preferencias.
 - Icono en la bandeja del sistema, con menú rápido (conectar/
   desconectar todas las redes, pausar/reanudar todas las descargas) y
   opción de minimizar a bandeja al cerrar o al minimizar.
@@ -301,6 +305,14 @@ hub en DC++, usuarios/archivos anunciados por el servidor y estado de
 Kademlia en eMule, y estado de cada tracker (URL, si funciona,
 semillas y pares) por torrent, tamaño estimado de toda la red DHT y
 totales de bytes de la sesión en BitTorrent.
+
+Esa misma pestaña **Red** incluye ahora, en DC++, Gnutella2 y eMule,
+un botón "Servidores conocidos…" que abre una lista filtrable de
+servidores/hubs (con usuarios y ficheros compartidos cuando el
+protocolo real los expone) con clic derecho para conectar directamente
+al elegido, sin pasar por Preferencias — Soulseek (un único servidor
+central) y BitTorrent (sin concepto de "servidor", solo trackers por
+torrent) quedan fuera por no aplicar.
 
 Sobre **BitTorrent** en particular: negocia cifrado de protocolo
 (MSE/PE, para dificultar el filtrado por parte de ISPs que limitan el

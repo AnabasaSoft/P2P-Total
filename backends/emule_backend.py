@@ -174,6 +174,21 @@ FT_FILETYPE = 0x03
 FT_FILEFORMAT = 0x04
 FT_SOURCES = 0x15
 
+# IDs de tag de servidor, tal como vienen en cada entrada de server.met
+# (ServerList.cpp/OPCodes.h de eMule real): nombre, descripción y ping
+# los rellena quien mantiene la lista pública; usuarios/ficheros los
+# suele rellenar también el agregador tras sondear cada servidor -no
+# son un dato en vivo (para eso está OP_SERVERSTATUS del servidor ya
+# conectado, ver `_on_server_status`), pero es la única forma de
+# mostrar una estimación por servidor antes de conectar a ninguno,
+# igual que hace la lista de servidores de aMule.
+ST_SERVERNAME = 0x01
+ST_DESCRIPTION = 0x02
+ST_PING = 0x03
+ST_MAXUSERS = 0x87
+ST_SOFTFILES = 0x88
+ST_HARDFILES = 0x89
+
 # Valores de FT_FILETYPE reconocidos por el servidor (opcodes.h de eMule
 # real): "Arc"/"Iso" están marcados ahí como "eMule internal use only" y
 # no se mandan nunca por red, así que las categorías "archive"/"cdimage"
@@ -613,7 +628,14 @@ def parse_ed2k_link(link: str) -> tuple[str, int, str] | None:
     return title, size, parts[4].lower()
 
 
-def parse_server_met(data: bytes) -> list[tuple[str, int]]:
+def parse_server_met(data: bytes) -> list[dict]:
+    """Cada entrada trae siempre `host`/`port`; el resto de campos
+    (`name`, `description`, `ping`, `max_users`, `soft_files`,
+    `hard_files`) solo si el propio server.met los incluye -depende de
+    quién mantenga la lista pública descargada, no es un dato en vivo
+    (para eso está `OP_SERVERSTATUS` del servidor ya conectado, ver
+    `_on_server_status`), pero es lo mismo que muestra aMule en su
+    lista de servidores antes de conectar a ninguno."""
     if len(data) < 5 or data[0] != 0xE0:
         return []
     offset = 1
@@ -628,12 +650,35 @@ def parse_server_met(data: bytes) -> list[tuple[str, int]]:
             offset += 2
             tagcount = struct.unpack_from("<I", data, offset)[0]
             offset += 4
+            entry = {"host": ip, "port": port}
             for _ in range(tagcount):
-                _tag, offset = read_tag(data, offset)
-            servers.append((ip, port))
+                tag, offset = read_tag(data, offset)
+                if tag.name_id == ST_SERVERNAME:
+                    entry["name"] = tag.value
+                elif tag.name_id == ST_DESCRIPTION:
+                    entry["description"] = tag.value
+                elif tag.name_id == ST_PING:
+                    entry["ping"] = tag.value
+                elif tag.name_id == ST_MAXUSERS:
+                    entry["max_users"] = tag.value
+                elif tag.name_id == ST_SOFTFILES:
+                    entry["soft_files"] = tag.value
+                elif tag.name_id == ST_HARDFILES:
+                    entry["hard_files"] = tag.value
+            servers.append(entry)
     except (struct.error, IndexError):
         pass  # nos quedamos con lo que se haya podido parsear hasta el corte
     return servers
+
+
+async def fetch_public_server_list(timeout: float = 15.0, proxy: ProxyConfig | None = None) -> list[dict]:
+    """Descarga y parsea el `server.met` público -función de módulo
+    suelta (no un método de `EMuleBackend`) para que la lista de
+    servidores conocidos de la GUI se pueda abrir sin necesidad de
+    tener ya un backend conectado, igual que `discover_hubs()` en
+    `g2_backend.py`."""
+    data = await http_get(SERVER_MET_URL, timeout=timeout, proxy=proxy)
+    return parse_server_met(data)
 
 
 def parse_nodes_dat(data: bytes) -> list[dict]:
@@ -1152,9 +1197,15 @@ class EMuleBackend(NetworkBackend):
 
     # -- servidor eD2k ------------------------------------------------------
 
-    async def discover_servers(self, timeout: float = 15.0) -> list[tuple[str, int]]:
-        data = await http_get(SERVER_MET_URL, timeout=timeout, proxy=self._proxy)
-        return parse_server_met(data)
+    async def discover_servers(self, timeout: float = 15.0) -> list[dict]:
+        """Lista completa del server.met público (host/port y, si el
+        propio fichero los trae, name/description/ping/max_users/
+        soft_files/hard_files) -usada por `connect_auto`. Delega en
+        `fetch_public_server_list`, disponible también como función de
+        módulo suelta para la lista de servidores conocidos de la GUI,
+        que puede abrirse sin tener todavía ningún `EMuleBackend`
+        conectado."""
+        return await fetch_public_server_list(timeout=timeout, proxy=self._proxy)
 
     @property
     def discovered_servers(self) -> set[tuple[str, int]]:
@@ -1246,7 +1297,8 @@ class EMuleBackend(NetworkBackend):
             raise ConnectionError("No se pudo descargar/parsear server.met para descubrir servidores eD2k")
         cached_set = set(cached)
         tried = len(cached)
-        for host, port in servers[:30]:
+        for entry in servers[:30]:
+            host, port = entry["host"], entry["port"]
             if (host, port) in cached_set:
                 continue  # ya lo probamos arriba
             tried += 1

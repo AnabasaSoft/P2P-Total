@@ -8,8 +8,8 @@ import asyncio
 from PyQt6.QtCore import Qt, QSortFilterProxyModel
 from PyQt6.QtGui import QStandardItem, QStandardItemModel
 from PyQt6.QtWidgets import (
-    QAbstractItemView, QDialog, QDialogButtonBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QTableView, QVBoxLayout,
+    QAbstractItemView, QDialog, QDialogButtonBox, QHeaderView,
+    QLabel, QLineEdit, QMenu, QTableView, QVBoxLayout,
 )
 
 from backends.dcpp_backend import HubListEntry, fetch_public_hub_list
@@ -93,6 +93,8 @@ class HubListDialog(QDialog):
         self._table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._table.horizontalHeader().setSectionResizeMode(COL_DESCRIPTION, QHeaderView.ResizeMode.Stretch)
         self._table.doubleClicked.connect(lambda _: self._accept_selection())
+        self._table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self._table.customContextMenuRequested.connect(self._on_context_menu)
         layout.addWidget(self._table, stretch=1)
 
         buttons = QDialogButtonBox(
@@ -119,6 +121,17 @@ class HubListDialog(QDialog):
 
     def _on_filter_changed(self, text: str) -> None:
         self._proxy.setFilterFixedString(text)
+
+    def _on_context_menu(self, pos) -> None:
+        index = self._table.indexAt(pos)
+        if not index.isValid():
+            return
+        self._table.selectRow(index.row())
+        menu = QMenu(self)
+        connect_action = menu.addAction(t("ctx_connect_server"))
+        action = menu.exec(self._table.viewport().mapToGlobal(pos))
+        if action == connect_action:
+            self._accept_selection()
 
     def _accept_selection(self) -> None:
         indexes = self._table.selectionModel().selectedRows()

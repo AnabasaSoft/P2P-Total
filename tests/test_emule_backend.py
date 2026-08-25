@@ -1,12 +1,20 @@
 """backends/emule_backend.py: framing de tags/paquetes del protocolo
 eD2k, y el parseo de enlaces ed2k:// (todo sin abrir sockets)."""
 
+import struct
+
 from backends.emule_backend import (
     CT_NAME,
     OP_EDONKEYPROT,
     OP_KADEMLIAPACKEDPROT,
     OP_LOGINREQUEST,
     OP_PACKEDPROT,
+    ST_DESCRIPTION,
+    ST_HARDFILES,
+    ST_MAXUSERS,
+    ST_PING,
+    ST_SERVERNAME,
+    ST_SOFTFILES,
     TAGTYPE_STRING,
     TAGTYPE_UINT8,
     TAGTYPE_UINT32,
@@ -15,6 +23,7 @@ from backends.emule_backend import (
     build_tcp_packet,
     build_udp_packet,
     parse_ed2k_link,
+    parse_server_met,
     parse_udp_packet,
     read_tag,
     write_tag,
@@ -126,3 +135,46 @@ def test_parse_ed2k_link_rejects_bad_hash_length():
 
 def test_parse_ed2k_link_rejects_missing_parts():
     assert parse_ed2k_link("ed2k://|file|x.zip|10|") is None
+
+
+def _build_server_met_entry(ip_octets: bytes, port: int, tags: bytes, tagcount: int) -> bytes:
+    return ip_octets + struct.pack("<H", port) + struct.pack("<I", tagcount) + tags
+
+
+def test_parse_server_met_extracts_host_port_and_known_tags():
+    tags = (
+        write_tag(ST_SERVERNAME, TAGTYPE_STRING, "Servidor de prueba")
+        + write_tag(ST_DESCRIPTION, TAGTYPE_STRING, "Un servidor cualquiera")
+        + write_tag(ST_PING, TAGTYPE_UINT32, 42)
+        + write_tag(ST_MAXUSERS, TAGTYPE_UINT32, 50000)
+        + write_tag(ST_SOFTFILES, TAGTYPE_UINT32, 2000000)
+        + write_tag(ST_HARDFILES, TAGTYPE_UINT32, 2500000)
+    )
+    entry = _build_server_met_entry(bytes([85, 17, 116, 222]), 6082, tags, 6)
+    data = bytes([0xE0]) + struct.pack("<I", 1) + entry
+
+    servers = parse_server_met(data)
+
+    assert servers == [{
+        "host": "85.17.116.222",
+        "port": 6082,
+        "name": "Servidor de prueba",
+        "description": "Un servidor cualquiera",
+        "ping": 42,
+        "max_users": 50000,
+        "soft_files": 2000000,
+        "hard_files": 2500000,
+    }]
+
+
+def test_parse_server_met_entry_without_tags_has_only_host_and_port():
+    entry = _build_server_met_entry(bytes([1, 2, 3, 4]), 4661, b"", 0)
+    data = bytes([0xE0]) + struct.pack("<I", 1) + entry
+
+    servers = parse_server_met(data)
+
+    assert servers == [{"host": "1.2.3.4", "port": 4661}]
+
+
+def test_parse_server_met_rejects_wrong_magic_byte():
+    assert parse_server_met(bytes([0x00, 0, 0, 0, 0])) == []
