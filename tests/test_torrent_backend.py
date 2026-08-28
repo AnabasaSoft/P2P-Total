@@ -197,6 +197,46 @@ async def test_list_trackers_reports_url_from_magnet(tmp_path):
         await backend.disconnect()
 
 
+def test_list_trackers_reports_working_if_any_endpoint_succeeds():
+    """Bug real reportado por el usuario: dos descargas avanzando a
+    buena velocidad (con peers reales) mostraban TODOS sus trackers
+    "con errores" en la pestaña Red. Desde libtorrent 2.x, cada tracker
+    se anuncia por separado desde cada interfaz de red local
+    (loopback, la IP real...) y esos resultados van en "endpoints"; los
+    campos de nivel superior del dict (`fails`/`scrape_*`) solo
+    reflejan el primer endpoint -normalmente el de loopback, que nunca
+    tiene salida real a internet y por tanto siempre falla- así que
+    mirarlos directamente hacía ver "con errores" un tracker que en
+    realidad funcionaba bien por la interfaz real."""
+    loopback_endpoint = {"message": "", "fails": 1, "scrape_complete": -1, "scrape_incomplete": -1}
+    real_endpoint = {"message": "", "fails": 0, "scrape_complete": 3, "scrape_incomplete": 1}
+    tracker_dict = {
+        "url": "udp://tracker.example.org:1337/announce",
+        "fails": 1,  # nivel superior = el primer endpoint (loopback, en fallo)
+        "message": "",
+        "scrape_complete": -1,
+        "scrape_incomplete": -1,
+        "endpoints": [loopback_endpoint, real_endpoint],
+    }
+
+    class _FakeTrackersHandle:
+        def trackers(self):
+            return [tracker_dict]
+
+    backend = TorrentBackend()
+    download = _fake_download()
+    backend._active["fakehash"] = {"handle": _FakeTrackersHandle(), "download": download}
+
+    trackers = backend.list_trackers(download)
+    assert trackers == [{
+        "url": "udp://tracker.example.org:1337/announce",
+        "working": True,
+        "message": "",
+        "seeds": 3,
+        "peers": 1,
+    }]
+
+
 def test_list_trackers_none_when_no_active_download():
     backend = TorrentBackend()
     download = Download(

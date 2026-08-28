@@ -6268,3 +6268,73 @@ el arreglo de este apartado hace que, a partir de ahora, cualquier
 error de disco real en una descarga de torrent se vea en la GUI como
 "Error" en vez de un atasco silencioso — igual que ya pasaba en las
 otras cuatro redes.
+
+### Arreglo: trackers marcados "con errores" pese a descargar a buena velocidad, y descargas duplicadas que perdían el menú de pausar/reanudar
+
+Dos bugs reales más reportados por el usuario sobre el mismo caso (los
+torrents de openSUSE y del pack de D&D, ya con el arreglo anterior
+aplicado y descargando con normalidad): la tabla de "Trackers activos"
+de la pestaña Red seguía marcando el 100% de los trackers "con
+errores" pese a que las descargas iban a varios MB/s; y, por separado,
+al menú contextual de Transferencias le habían "desaparecido" los
+botones de pausar/reanudar en alguna de las dos descargas.
+
+**Trackers "con errores" siendo falso**: `TorrentBackend.list_trackers`
+leía `t["fails"] == 0` del dict que devuelve `handle.trackers()` para
+decidir si un tracker "funciona". Comprobado en vivo contra un magnet
+real (descarga de prueba de openSUSE con tráfico genuino): desde
+libtorrent 2.x cada tracker se anuncia por separado desde cada
+interfaz de red local del equipo (loopback IPv4, la IP real de la
+interfaz de red, loopback IPv6, IPv6 local...), y esos resultados
+individuales van dentro de una lista `"endpoints"` del propio dict; los
+campos de nivel superior (`fails`, `message`, `scrape_complete`,
+`scrape_incomplete`) que se estaban leyendo solo reflejan el
+**primer** endpoint de esa lista, que en la práctica es casi siempre
+el de loopback (`127.0.0.1`) — y anunciarse a un tracker por loopback
+nunca puede tener éxito, porque no tiene salida real a internet, así
+que ese campo estaba en fallo permanente aunque la interfaz real
+(`192.168.1.151` en la prueba) sí respondiera bien, con datos de
+scrape reales (semillas/pares) que nunca se leían — de ahí también el
+"?" que aparecía en las columnas Semillas/Pares de la captura original
+del usuario, ya que el nivel superior trae `-1` ("sin dato") cuando el
+dato real está en el endpoint correcto. Se corrigió `list_trackers`
+para que recorra `endpoints`: un tracker se considera "funcionando" si
+**cualquiera** de sus endpoints tiene éxito (`fails == 0`), y
+semillas/pares se toman como el máximo real reportado entre todos los
+endpoints. Validado con un test nuevo,
+`test_list_trackers_reports_working_if_any_endpoint_succeeds` en
+`tests/test_torrent_backend.py`, que reproduce con un handle simulado
+la misma forma exacta de dict que devuelve libtorrent real (un
+endpoint de loopback en fallo + uno real con éxito) y comprueba que el
+resultado agregado es "funcionando" con las semillas/pares correctos.
+
+**Botones de pausar/reanudar desaparecidos**: se encontró que
+`DownloadManager.download()` nunca comprobaba si ya había una descarga
+activa con el mismo `source_id` antes de crear una fila nueva en
+Transferencias — si el usuario reintentaba un torrent que parecía
+atascado (volviendo a pulsar "Descargar" sobre el mismo resultado),
+se creaba una segunda fila con el mismo magnet/`.torrent`. En
+BitTorrent ambas descargas comparten `info_hash`, y
+`TorrentBackend._active` (el diccionario interno de descargas activas
+del backend) está indexado precisamente por `info_hash` — así que la
+segunda entrada sobrescribía en silencio a la primera, que dejaba de
+recibir actualizaciones de `_poll_loop` para siempre y quedaba
+congelada con el último estado que tuviera en ese momento (ni
+`DOWNLOADING` ni `PAUSED`), estado para el que el menú contextual no
+ofrece ni pausar ni reanudar — de ahí que "desaparecieran" esos
+botones en esa fila fantasma, indistinguible a simple vista de la
+descarga real. Se corrigió en la capa de `DownloadManager` (por
+encima de cualquier backend concreto, ya que el mismo problema podría
+darse en cualquier red): `download()` ahora comprueba si ya existe una
+descarga activa (`QUEUED`/`SEARCHING_SOURCES`/`DOWNLOADING`/`PAUSED`)
+con el mismo `network`+`source_id` antes de arrancar una nueva, y
+rechaza la petición con un error claro en vez de crear el duplicado
+-la GUI ya tenía un `except Exception` alrededor de esta llamada que
+muestra el mensaje en un diálogo, así que no hizo falta tocar nada de
+la GUI. Validado con tres tests nuevos en
+`tests/test_download_manager_duplicates.py` (rechaza un duplicado
+mientras el primero sigue activo; permite reintentar la misma fuente
+una vez el primero ya terminó/se marcó `COMPLETED`; permite dos
+descargas de fuentes distintas en paralelo sin problema), usando un
+backend simulado para no depender de libtorrent real. Suite completa
+de pytest en verde: 241/241.

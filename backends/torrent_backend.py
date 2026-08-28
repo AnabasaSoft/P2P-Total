@@ -705,17 +705,31 @@ class TorrentBackend(NetworkBackend):
         # handle.trackers() devuelve dicts (no objetos announce_entry
         # navegables con atributos), pese a que la clase lt.announce_entry
         # sí expone esos campos como propiedades/métodos -es la propia
-        # librería la que serializa así, no una elección nuestra.
-        return [
-            {
+        # librería la que serializa así, no una elección nuestra. Desde
+        # libtorrent 2.x cada tracker se anuncia por separado desde cada
+        # interfaz de red local (loopback IPv4/IPv6, la IP real...) y esos
+        # resultados van en "endpoints"; los campos de nivel superior
+        # (`fails`/`scrape_*`) solo reflejan el primer endpoint -casi
+        # siempre el de loopback, que nunca tiene salida real a
+        # internet y por tanto siempre falla- así que mirarlos
+        # directamente hacía ver "con errores" un tracker que en
+        # realidad funcionaba bien por la interfaz real. Basta con que
+        # UNA interfaz haya tenido éxito para considerar el tracker
+        # "funcionando", y con tomar los datos de scrape del endpoint
+        # que sí respondió.
+        result = []
+        for t in entry["handle"].trackers():
+            endpoints = t.get("endpoints") or [t]
+            working_endpoints = [ep for ep in endpoints if ep["fails"] == 0]
+            best = working_endpoints[0] if working_endpoints else endpoints[0]
+            result.append({
                 "url": t["url"],
-                "working": t["fails"] == 0,
-                "message": t["message"],
-                "seeds": t["scrape_complete"],
-                "peers": t["scrape_incomplete"],
-            }
-            for t in entry["handle"].trackers()
-        ]
+                "working": bool(working_endpoints),
+                "message": best["message"],
+                "seeds": max((ep["scrape_complete"] for ep in endpoints), default=-1),
+                "peers": max((ep["scrape_incomplete"] for ep in endpoints), default=-1),
+            })
+        return result
 
     def set_file_priorities(self, download: Download, priorities: dict[int, int]) -> None:
         entry = self._find_entry(download)

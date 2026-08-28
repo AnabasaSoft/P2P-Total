@@ -148,6 +148,23 @@ class DownloadManager:
         if backend is None:
             raise RuntimeError(f"No hay backend registrado para {result.network}")
 
+        # Bug real reportado por el usuario: añadir dos veces el mismo
+        # torrent/fuente (p.ej. al reintentar uno que parecía atascado)
+        # creaba una segunda fila en Transferencias con el mismo
+        # `source_id`. En BitTorrent ambas comparten info_hash, así que
+        # `TorrentBackend` acababa sobrescribiendo en silencio la entrada
+        # activa de la primera con la de la segunda: la primera dejaba de
+        # recibir actualizaciones de `_poll_loop` y quedaba congelada para
+        # siempre con un estado (ni DOWNLOADING ni PAUSED) que ya no
+        # ofrecía pausar/reanudar en el menú contextual.
+        for existing in database.load_all_downloads():
+            if (
+                existing.network == result.network
+                and existing.source_id == result.source_id
+                and existing.state in _ACTIVE_STATES
+            ):
+                raise RuntimeError(f"Ya hay una descarga activa de \"{existing.title}\"")
+
         download = await backend.start_download(result, dest_path)
         download.category = category
         download.id = database.insert_download(download)
