@@ -5,14 +5,15 @@ cancelar/iniciar/reiniciar/abrir carpeta), al estilo de la pestaña
 
 import asyncio
 
-from PyQt6.QtCore import QUrl, Qt
-from PyQt6.QtGui import QDesktopServices, QKeySequence, QShortcut
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QAbstractItemView, QHeaderView, QInputDialog, QMenu, QMessageBox, QVBoxLayout, QWidget,
 )
 
 from core.download_manager import DownloadManager
 from core.models import Download, DownloadState, Network
+from gui.desktop_open import open_local_path
 from gui.i18n import t
 from gui.models_qt import DownloadsModel, DownloadsSortProxy
 from gui.widgets.accessible_table import AccessibleTableView
@@ -178,7 +179,7 @@ class DownloadsTab(QWidget):
         elif action == delete_action:
             self._confirm_and_delete(downloads)
         elif action == open_folder_action:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(downloads[0].dest_path))
+            open_local_path(downloads[0].dest_path)
         elif action == speed_limit_action:
             self._on_set_speed_limit(downloads)
         elif action == torrent_files_action:

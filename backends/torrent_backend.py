@@ -47,6 +47,14 @@ def _destroy_session(session: "lt.session") -> None:
 
 _FILE_PREFIX = "file:"  # prefijo interno para distinguir source_id de archivo .torrent vs magnet
 
+# Prioridades de archivo de libtorrent que usa la GUI (TorrentFilesDialog):
+# 0 = no descargar, 4 = prioridad normal. Se exportan aquí (en vez de
+# quedar como constantes locales del diálogo) porque el propio backend
+# también las necesita para reconstruir la lista completa de prioridades
+# al reenganchar un torrent tras reiniciar la app.
+PRIORITY_SKIP = 0
+PRIORITY_NORMAL = 4
+
 # Indexador público usado para la búsqueda por texto libre (punto 29 del
 # backlog): misma API JSON de apibay.org (The Pirate Bay) usada por el
 # script de referencia que dio el usuario. Solo hace falta un GET, sin
@@ -164,6 +172,15 @@ def _is_torrent_file(query: str) -> bool:
     return query.lower().endswith(".torrent") and os.path.isfile(query)
 
 
+def _priorities_dict_to_list(priorities: dict[int, int], num_files: int) -> list[int]:
+    """`add_torrent_params.file_priorities`/`handle.prioritize_files()`
+    esperan una lista con una entrada por cada archivo del torrent (no un
+    dict disperso): los índices ausentes del `dict` persistido se rellenan
+    con la prioridad normal, igual que el valor por defecto que ya trae
+    libtorrent para un archivo nunca tocado por el usuario."""
+    return [priorities.get(i, PRIORITY_NORMAL) for i in range(num_files)]
+
+
 def _infohash_from_magnet(magnet: str) -> str | None:
     """Extrae el infohash en hex minúsculas directamente del texto del
     magnet, sin depender de libtorrent. Se usa como clave para no perder
@@ -217,6 +234,13 @@ class TorrentBackend(NetworkBackend):
         self._seed_ratio_limit = 0.0        # punto 38: 0 = sin límite
         self._seed_time_limit_minutes = 0   # punto 38: 0 = sin límite
         self._seed_started_at: dict[str, float] = {}  # info_hash -> momento en que empezó a sembrar
+        # info_hash -> selección de archivos persistida pendiente de aplicar:
+        # solo se usa para torrents reenganchados por magnet, donde no se
+        # conoce el nº de archivos hasta que llegan los metadatos vía DHT/
+        # peers (a diferencia del caso .torrent local, donde ya se puede
+        # aplicar de inmediato al añadir el torrent). `_poll_loop` la
+        # consume en cuanto `has_metadata` pasa a True.
+        self._pending_file_priorities: dict[str, dict[int, int]] = {}
 
     # ---- ciclo de vida ----
 
@@ -489,19 +513,34 @@ class TorrentBackend(NetworkBackend):
         `save_path` real. Al no pasar datos de fast-resume, libtorrent
         hace un recheck automático de las piezas ya en disco (rápido,
         solo hashes) antes de seguir bajando el resto — no hace falta
-        reimplementar esa lógica a mano."""
+        reimplementar esa lógica a mano.
+
+        Si el torrent tiene una selección de archivos guardada
+        (`download.file_priorities`, punto reportado por el usuario: antes
+        se perdía en cada reinicio y todos los archivos volvían a marcarse
+        como seleccionados, arrancando de hecho una descarga distinta y
+        mucho más grande que la que había en curso), se restaura aquí: de
+        inmediato si el torrent viene de un .torrent local (los metadatos
+        ya están disponibles sin esperar a nada), o en cuanto lleguen los
+        metadatos vía DHT/peers si viene de un magnet (`_poll_loop` la
+        aplica desde `_pending_file_priorities`)."""
         if self._session is None or self._find_entry(download) is not None:
             return
 
         if download.source_id.startswith(_FILE_PREFIX):
             path = download.source_id[len(_FILE_PREFIX):]
             info = lt.torrent_info(path)
-            handle = self._session.add_torrent({"ti": info, "save_path": download.dest_path})
+            params = {"ti": info, "save_path": download.dest_path}
+            if download.file_priorities:
+                params["file_priorities"] = _priorities_dict_to_list(download.file_priorities, info.num_files())
+            handle = self._session.add_torrent(params)
         else:
             magnet = _to_magnet(download.source_id)
             params = lt.parse_magnet_uri(magnet)
             params.save_path = download.dest_path
             handle = self._session.add_torrent(params)
+            if download.file_priorities:
+                self._pending_file_priorities[str(handle.info_hash())] = download.file_priorities
 
         if download.state == DownloadState.PAUSED:
             # libtorrent reactiva un torrent pausado casi de inmediato por su
@@ -549,6 +588,7 @@ class TorrentBackend(NetworkBackend):
             info_hash = str(entry["handle"].info_hash())
             del self._active[info_hash]
             self._seed_started_at.pop(info_hash, None)
+            self._pending_file_priorities.pop(info_hash, None)
             download.state = DownloadState.CANCELLED
 
     def set_global_limits(self, download_bps: int, upload_bps: int) -> None:
@@ -681,11 +721,46 @@ class TorrentBackend(NetworkBackend):
         entry = self._find_entry(download)
         if entry is None:
             return
-        handle = entry["handle"]
+        self._apply_file_priorities(entry["handle"], priorities)
+
+    @staticmethod
+    def _apply_file_priorities(handle: "lt.torrent_handle", priorities: dict[int, int]) -> None:
         current = handle.file_priorities()
         for index, priority in priorities.items():
-            current[index] = priority
+            if 0 <= index < len(current):
+                current[index] = priority
         handle.prioritize_files(current)
+
+    def delete_deselected_files(self, download: Download, indices: list[int]) -> None:
+        """Borra del disco el contenido ya descargado de los archivos que
+        se acaban de desmarcar (petición explícita del usuario: al
+        aceptar la selección, lo desmarcado desaparece, no solo deja de
+        descargarse). Un archivo desmarcado puede compartir una pieza de
+        borde con un archivo vecino que sigue queriéndose -por eso, tras
+        borrar, se fuerza un recheck de todo el torrent para que
+        libtorrent detecte y vuelva a pedir esa pieza si se ha visto
+        afectada, en vez de arriesgarse a dar por buena una pieza que ya
+        no está completa en disco."""
+        entry = self._find_entry(download)
+        if entry is None or not indices:
+            return
+        handle = entry["handle"]
+        if not handle.status().has_metadata:
+            return
+        files = handle.torrent_file().files()
+        save_path = handle.status().save_path
+        deleted_any = False
+        for index in indices:
+            if not (0 <= index < files.num_files()):
+                continue
+            path = os.path.join(save_path, files.file_path(index))
+            try:
+                os.remove(path)
+                deleted_any = True
+            except OSError:
+                pass
+        if deleted_any:
+            handle.force_recheck()
 
     def set_sequential_download(self, download: Download, enabled: bool) -> None:
         entry = self._find_entry(download)
@@ -755,6 +830,17 @@ class TorrentBackend(NetworkBackend):
                     handle = entry["handle"]
                     status = handle.status()
                     d = entry["download"]
+
+                    # Selección de archivos restaurada de una sesión
+                    # anterior en un torrent reenganchado por magnet: no se
+                    # pudo aplicar en `reattach_download` porque aún no se
+                    # conocía el nº de archivos, así que se aplica aquí en
+                    # cuanto llegan los metadatos (una sola vez).
+                    pending = self._pending_file_priorities.get(info_hash)
+                    if pending is not None and status.has_metadata:
+                        self._apply_file_priorities(handle, pending)
+                        del self._pending_file_priorities[info_hash]
+
                     d.downloaded_bytes = status.total_wanted_done
                     d.size_bytes = status.total_wanted or d.size_bytes
                     d.speed_bps = status.download_rate

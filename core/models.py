@@ -63,6 +63,12 @@ class Download:
     category: Optional[str] = None # nombre de la categoría (core.config.Category) elegida al arrancar la descarga, None = sin categoría
     added_at: datetime = field(default_factory=datetime.utcnow)
     error_message: Optional[str] = None
+    # Selección de archivos de un torrent multi-archivo (índice -> prioridad
+    # libtorrent, 0 = no descargar), solo relevante en BitTorrent. Se
+    # persiste para que sobreviva a cerrar y reabrir la app (punto reportado
+    # por el usuario: antes se perdía y `reattach_download` volvía a marcar
+    # todos los archivos como seleccionados en cada reinicio).
+    file_priorities: Optional[dict[int, int]] = None
 
     @property
     def progress(self) -> float:

@@ -4,10 +4,9 @@ GitHub. Cuando el tipo de instalación actual soporta auto-actualización
 en el momento; si no, cae al comportamiento de siempre: un botón para
 ir a la página de descarga."""
 
-from PyQt6.QtCore import QUrl
-from PyQt6.QtGui import QDesktopServices
 from PyQt6.QtWidgets import QMessageBox
 
+from gui.desktop_open import open_url
 from gui.i18n import t
 
 
@@ -34,5 +33,5 @@ class UpdateAvailableDialog(QMessageBox):
     def exec(self) -> int:
         result = super().exec()
         if self.clickedButton() == self._download_button:
-            QDesktopServices.openUrl(QUrl(self._release_url))
+            open_url(self._release_url)
         return result

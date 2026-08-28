@@ -280,9 +280,27 @@ class DownloadManager:
         return entries
 
     def set_file_priorities(self, download: Download, priorities: dict[int, int]) -> None:
+        """Aplica la nueva selección de archivos al backend, la persiste
+        para que sobreviva a reiniciar la app (antes se perdía y
+        `reattach_download` volvía a marcar todos los archivos como
+        seleccionados) y borra del disco el contenido ya descargado de los
+        archivos que se acaban de desmarcar en esta misma llamada (no los
+        que ya estaban desmarcados de antes, para no repetir el borrado en
+        cada retoque de la selección)."""
         backend = BackendRegistry.get(download.network)
-        if backend is not None:
-            backend.set_file_priorities(download, priorities)
+        if backend is None:
+            return
+        previous = download.file_priorities or {}
+        backend.set_file_priorities(download, priorities)
+        newly_deselected = [
+            index for index, priority in priorities.items()
+            if priority == 0 and previous.get(index, 1) != 0
+        ]
+        if newly_deselected:
+            backend.delete_deselected_files(download, newly_deselected)
+        download.file_priorities = dict(priorities)
+        if download.id is not None:
+            database.update_download_file_priorities(download.id, download.file_priorities)
 
     def set_sequential_download(self, download: Download, enabled: bool) -> None:
         backend = BackendRegistry.get(download.network)

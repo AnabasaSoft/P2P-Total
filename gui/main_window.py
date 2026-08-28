@@ -40,6 +40,7 @@ from gui.widgets.network_tab import NetworkTab
 from gui.widgets.search_tab import SearchTab
 from gui.widgets.settings_dialog import SettingsDialog
 from gui.widgets.stats_tab import StatsTab
+from gui.widgets.torrent_files_dialog import TorrentFilesDialog
 from gui.widgets.update_dialog import UpdateAvailableDialog
 
 
@@ -536,6 +537,26 @@ class MainWindow(QMainWindow):
             return
         self._downloads_tab.add_download(download)
         self._tabs.setCurrentWidget(self._downloads_tab)
+        if download.network == Network.TORRENT:
+            await self._maybe_show_torrent_file_selection(download)
+
+    async def _maybe_show_torrent_file_selection(self, download: Download) -> None:
+        """Al añadir un torrent con más de un archivo, se abre siempre el
+        diálogo de selección de archivos antes de dejarlo descargando sin
+        más (petición explícita del usuario). Los metadatos pueden tardar
+        unos segundos en llegar vía DHT/peers si el torrent viene de un
+        magnet sin resolver antes en la búsqueda (caso de los resultados
+        de texto libre de apibay.org) -de ahí la espera con sondeo, en vez
+        de comprobarlo una sola vez nada más empezar la descarga."""
+        deadline = asyncio.get_event_loop().time() + 15.0
+        files = None
+        while asyncio.get_event_loop().time() < deadline:
+            files = self._download_manager.list_torrent_files(download)
+            if files is not None:
+                break
+            await asyncio.sleep(0.3)
+        if files and len(files) > 1:
+            TorrentFilesDialog(self._download_manager, download, self).exec()
 
     def _on_open_settings(self) -> None:
         dialog = SettingsDialog(self)

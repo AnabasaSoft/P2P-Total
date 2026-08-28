@@ -39,7 +39,8 @@ CREATE TABLE IF NOT EXISTS downloads (
     priority INTEGER NOT NULL DEFAULT 0,
     category TEXT,
     added_at TEXT NOT NULL,
-    error_message TEXT
+    error_message TEXT,
+    file_priorities TEXT
 );
 CREATE TABLE IF NOT EXISTS search_history (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -122,6 +123,13 @@ def init_db() -> None:
         # el concepto (equivale a "sin categoría").
         if "category" not in columns:
             conn.execute("ALTER TABLE downloads ADD COLUMN category TEXT")
+        # Migración para la selección de archivos de torrents multi-archivo:
+        # columna nueva 'file_priorities' (JSON), NULL para todo lo que ya
+        # estuviera descargándose antes de que existiera este seguimiento
+        # (equivale a "sin selección guardada", el backend usa la
+        # prioridad por defecto de libtorrent en ese caso).
+        if "file_priorities" not in columns:
+            conn.execute("ALTER TABLE downloads ADD COLUMN file_priorities TEXT")
 
 
 def insert_download(d: Download) -> int:
@@ -133,10 +141,12 @@ def insert_download(d: Download) -> int:
         cur = conn.execute(
             """INSERT INTO downloads
                (network, title, source_id, dest_path, size_bytes,
-                downloaded_bytes, state, priority, category, added_at, error_message)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                downloaded_bytes, state, priority, category, added_at, error_message,
+                file_priorities)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (d.network.value, d.title, d.source_id, d.dest_path, d.size_bytes,
-             d.downloaded_bytes, d.state.value, d.priority, d.category, d.added_at.isoformat(), d.error_message),
+             d.downloaded_bytes, d.state.value, d.priority, d.category, d.added_at.isoformat(), d.error_message,
+             json.dumps(d.file_priorities) if d.file_priorities is not None else None),
         )
         return cur.lastrowid
 
@@ -161,6 +171,18 @@ def update_download_progress(download_id: int, downloaded_bytes: int, state: Dow
         )
 
 
+def update_download_file_priorities(download_id: int, priorities: dict[int, int]) -> None:
+    """Persiste la selección de archivos de un torrent multi-archivo
+    (menú "Seleccionar archivos del torrent"), para que `reattach_download`
+    pueda restaurarla tras cerrar y volver a abrir la app en vez de que
+    libtorrent vuelva a marcar todos los archivos como seleccionados."""
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE downloads SET file_priorities = ? WHERE id = ?",
+            (json.dumps(priorities), download_id),
+        )
+
+
 def delete_download(download_id: int) -> None:
     with get_connection() as conn:
         conn.execute("DELETE FROM downloads WHERE id = ?", (download_id,))
@@ -181,6 +203,10 @@ def load_all_downloads() -> list[Download]:
         rows = conn.execute("SELECT * FROM downloads ORDER BY priority ASC, added_at DESC").fetchall()
     result = []
     for row in rows:
+        raw_priorities = row["file_priorities"]
+        file_priorities = (
+            {int(k): v for k, v in json.loads(raw_priorities).items()} if raw_priorities else None
+        )
         result.append(Download(
             id=row["id"],
             network=Network(row["network"]),
@@ -193,6 +219,7 @@ def load_all_downloads() -> list[Download]:
             priority=row["priority"],
             category=row["category"],
             error_message=row["error_message"],
+            file_priorities=file_priorities,
         ))
     return result
 

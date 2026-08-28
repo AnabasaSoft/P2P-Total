@@ -101,7 +101,10 @@ velocidad globales y por descarga.
   aMule/qBittorrent), y reintento automático configurable cuando una
   descarga se queda sin fuentes.
 - Selección de archivos y descarga secuencial dentro de un torrent
-  multi-archivo.
+  multi-archivo: al añadir uno con más de un archivo se abre siempre
+  una ventana para elegir cuáles descargar, la elección se recuerda
+  entre sesiones, y desmarcar un archivo y aceptar borra del disco lo
+  que ya se hubiera descargado de él.
 - Límites de velocidad de subida/bajada, globales y por descarga, con
   un planificador opcional que aplica unos límites alternativos solo
   durante una franja horaria del día (p.ej. limitar más de noche).

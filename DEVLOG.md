@@ -6035,3 +6035,154 @@ Gnutella2 tras el arreglo, ya no muestra ningún hueco por encima de
 huecos de 180-600 ms antes del arreglo) — mejora clara aunque no
 garantiza cero jitter de sistema operativo, que queda fuera del
 control del propio código Python.
+
+### Arreglo: la selección de archivos de un torrent multi-archivo no sobrevivía a reiniciar la app
+
+Bug real reportado por el usuario: al añadir un torrent con varios
+archivos, seleccionar solo algunos desde el menú contextual
+"Seleccionar archivos del torrent" y cerrar P2P Total a mitad de
+descarga (ejemplo dado: al 4%), al reabrir la app el diálogo de
+selección volvía a mostrar **todos** los archivos marcados, y la
+descarga parecía "reiniciar desde el 0%".
+
+La causa: `TorrentBackend.set_file_priorities()` ya aplicaba la
+selección al `lt.torrent_handle` en memoria, pero nunca se persistía en
+ningún sitio. `reattach_download()` (ver "Arreglo: las descargas no se
+reanudaban tras reiniciar la app" más arriba) reconstruye el torrent
+desde cero en cada reinicio con `add_torrent()`, y sin ninguna
+prioridad explícita libtorrent asigna la prioridad por defecto (normal,
+es decir "seleccionado") a **todos** los archivos — el equivalente a
+descartar la selección guardada y pedir el torrent entero de golpe. El
+"empieza desde 0%" no era un reinicio real del progreso ya descargado
+(`downloaded_bytes` seguía bien persistido en SQLite en cada tick de
+progreso, eso nunca estuvo roto): era que el denominador
+(`total_wanted`, el tamaño total "querido") pasaba de ser solo el de
+los archivos elegidos a ser el del torrent completo de golpe, así que
+el mismo progreso ya descargado se veía como un porcentaje mucho menor
+sobre un total mucho mayor — y de paso libtorrent se ponía a pedir
+datos nuevos de archivos que el usuario había descartado a propósito.
+
+Arreglado con tres cambios coordinados:
+
+- **Persistencia**: `Download` (`core/models.py`) tiene un campo nuevo
+  `file_priorities: dict[int, int] | None`; `core/database.py` añade la
+  columna `file_priorities` (JSON, con migración para bases de datos
+  existentes) y una función `update_download_file_priorities()`.
+  `DownloadManager.set_file_priorities()` ahora, además de aplicar la
+  selección al backend, la guarda en el propio `Download` en memoria y
+  en SQLite.
+- **Restauración al reenganchar**: `TorrentBackend.reattach_download()`
+  aplica la selección guardada al volver a añadir el torrent. Si viene
+  de un `.torrent` local, los metadatos ya se conocen sin esperar a
+  nada, así que se pasa directamente `file_priorities` en el propio
+  `add_torrent()` (ni siquiera llega a pedirse un solo byte de los
+  archivos descartados). Si viene de un magnet, el número de archivos
+  no se conoce hasta que llegan los metadatos vía DHT/peers, así que la
+  selección queda en un diccionario `_pending_file_priorities` (por
+  info_hash) que `_poll_loop()` aplica en cuanto detecta
+  `status.has_metadata`, una sola vez.
+- **Diálogo siempre visible en torrents multi-archivo**: antes, la
+  selección solo se podía tocar a demanda desde el menú contextual de
+  Transferencias — si el usuario no sabía que existía esa opción, el
+  torrent se descargaba entero sin más. Ahora `MainWindow._start_download()`
+  llama a `_maybe_show_torrent_file_selection()` justo después de
+  arrancar cualquier descarga de BitTorrent: espera (con sondeo, hasta
+  15 s) a que `list_torrent_files()` devuelva metadatos -necesario para
+  los resultados de búsqueda por texto libre vía apibay.org (punto 29),
+  que no resuelven metadatos antes de empezar a descargar, a diferencia
+  de un magnet/infohash ya buscado- y si el torrent tiene más de un
+  archivo, abre `TorrentFilesDialog` de inmediato. Con un solo archivo,
+  o si nunca llegan metadatos dentro del plazo, no se abre nada.
+- **Borrar en vez de solo dejar de descargar**: petición explícita del
+  usuario, distinta del comportamiento habitual de clientes como
+  qBittorrent (que solo dejan de pedir el archivo desmarcado, sin
+  tocar lo ya descargado). `TorrentFilesDialog` avisa ahora con un
+  texto visible de que aceptar la selección borra del disco el
+  contenido ya descargado de lo que se desmarque.
+  `DownloadManager.set_file_priorities()` calcula qué índices pasan de
+  seleccionados a desmarcados **en esta misma llamada** (no repite el
+  borrado en cada retoque posterior de archivos que ya estaban
+  desmarcados de antes) y se lo pasa a
+  `TorrentBackend.delete_deselected_files()`, que borra esos ficheros
+  del `save_path` real y fuerza un `force_recheck()` — necesario porque
+  un archivo puede compartir una pieza de borde con el archivo vecino
+  que sigue queriéndose, y el recheck hace que libtorrent detecte y
+  vuelva a pedir esa pieza si se ha visto afectada, en vez de arriesgarse
+  a dar por buena una pieza que ya no está completa en disco.
+
+Validado: 6 pruebas nuevas en `tests/test_torrent_file_selection.py`
+contra una `lt.session` real y local (mismo patrón que el resto de
+`test_torrent_backend.py`, con un torrent de dos archivos creado vía
+`create_torrent()`, sin depender de ningún peer remoto) — selección
+persistida y recuperable tras recargar de SQLite, borrado solo de los
+archivos recién desmarcados (no de los ya desmarcados de antes),
+restauración inmediata de la selección al reenganchar un `.torrent`
+local, y aplicación diferida vía `_pending_file_priorities` en cuanto
+`_poll_loop` detecta metadatos disponibles; más dos scripts offscreen
+(`QT_QPA_PLATFORM=offscreen`) ad hoc comprobando que
+`_maybe_show_torrent_file_selection()` abre el diálogo solo cuando hay
+más de un archivo (no con uno solo, no si nunca llegan metadatos) y que
+`TorrentFilesDialog._on_accept()` calcula bien las prioridades a partir
+de las casillas marcadas/desmarcadas. Suite completa: 236 pruebas en
+verde (230 + 6 nuevas), sin regresiones.
+
+### Arreglo: el botón "Descargar" del aviso de actualización no abría el navegador en el `.rpm` instalado
+
+Bug real reportado por el usuario: ejecutando `python main.py`, al pulsar
+"Descargar" en el diálogo de "hay una versión más reciente" se abre bien
+el navegador por defecto con la página de la release; instalado vía
+`.rpm`, el botón no hace absolutamente nada (sin error visible en la
+GUI).
+
+Causa: el ejecutable instalado lo genera PyInstaller en modo "onedir"
+(`packaging/p2p-total.spec`), empaquetado luego con `fpm`
+(`packaging/linux/build-linux-packages.sh`). El bootloader de
+PyInstaller en Linux modifica `LD_LIBRARY_PATH` para que el propio
+proceso encuentre ahí las librerías compartidas que trae incluidas
+(OpenSSL, zlib...) en vez de las del sistema — necesario para que
+`p2p-total` arranque igual da igual qué versiones tenga instaladas la
+distro. `QDesktopServices.openUrl()`, cuando el escritorio no tiene
+disponible un portal por DBus (`xdg-desktop-portal`), cae a lanzar
+`xdg-open` como subproceso normal, que **hereda ese `LD_LIBRARY_PATH`
+ya contaminado** y puede fallar en silencio al cargar sus propias
+dependencias u otras herramientas que invoque por debajo (el propio
+intérprete de Python del sistema, por ejemplo), sin que quede ningún
+rastro visible en la GUI de Qt. Ejecutando `python main.py` no hay
+bootloader de por medio, así que `LD_LIBRARY_PATH` nunca se toca y
+`xdg-open` funciona con el entorno normal del sistema — de ahí que
+solo fallara en el paquete instalado.
+
+Se revisó el resto de sitios donde la GUI abre algo externo y se
+encontró el mismo problema latente en "Abrir carpeta" del menú
+contextual de Transferencias (mismo `QDesktopServices.openUrl()`, solo
+que con `QUrl.fromLocalFile()` para lanzar el gestor de archivos en vez
+del navegador) — no reportado explícitamente por el usuario, pero con
+idéntica causa raíz, así que se arregló a la vez.
+
+PyInstaller guarda el valor original de `LD_LIBRARY_PATH` (el que había
+antes de que el bootloader lo pisara) en `LD_LIBRARY_PATH_ORIG`
+precisamente para este caso de uso (ver
+https://pyinstaller.org/en/stable/runtime-information.html). Se creó
+`gui/desktop_open.py` con `open_url()`/`open_local_path()`, que
+restauran `LD_LIBRARY_PATH_ORIG` (o lo quitan del todo si no existía)
+justo alrededor de la llamada a `QDesktopServices.openUrl()`, y reponen
+el valor "contaminado" de después (el propio proceso `p2p-total` lo
+sigue necesitando para funcionar) — sin efecto ninguno fuera de un
+build empaquetado en Linux (`sys.frozen` y `sys.platform` empiezan por
+`"linux"`), así que ejecutando `python main.py` o en Windows/macOS el
+comportamiento no cambia. `gui/widgets/update_dialog.py` (botón
+"Descargar") y `gui/widgets/downloads_tab.py` (menú "Abrir carpeta") se
+migraron a estas dos funciones en vez de llamar a `QDesktopServices`
+directamente.
+
+Validado con un script offscreen (`QT_QPA_PLATFORM=offscreen`) ad hoc
+que comprueba, simulando `sys.frozen`/`sys.platform` con `unittest.mock.
+patch`: que en un build "de fuente" no se toca `LD_LIBRARY_PATH` aunque
+esté puesto; que en un build empaquetado en Linux con
+`LD_LIBRARY_PATH_ORIG` presente se restaura ese valor solo durante la
+llamada y se repone el contaminado después; que sin
+`LD_LIBRARY_PATH_ORIG` se quita `LD_LIBRARY_PATH` del todo durante la
+llamada y también se repone después; y que `open_url()`/
+`open_local_path()` llaman a `QDesktopServices.openUrl()` con la
+`QUrl`/ruta local esperada. Suite completa de pytest sin cambios (236
+en verde), al no tocar ninguna lógica de red.

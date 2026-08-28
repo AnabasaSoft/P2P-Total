@@ -2,20 +2,26 @@
 casilla para activar la descarga secuencial (piezas en orden de
 principio a fin en vez de rarest-first), útil para poder ir
 reproduciendo un vídeo mientras el resto del torrent se sigue
-descargando."""
+descargando.
+
+Se abre automáticamente al añadir un torrent con más de un archivo
+(`MainWindow._maybe_show_torrent_file_selection`) y también a demanda
+desde el menú contextual de la pestaña Transferencias. Los archivos que
+se desmarquen y se acepten se borran del disco si ya tenían contenido
+descargado (petición explícita del usuario: no basta con dejar de
+descargarlos, tienen que desaparecer), vía
+`DownloadManager.set_file_priorities` -> `backend.delete_deselected_files`."""
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtWidgets import (
-    QCheckBox, QDialog, QDialogButtonBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
+    QCheckBox, QDialog, QDialogButtonBox, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout,
 )
 
+from backends.torrent_backend import PRIORITY_NORMAL, PRIORITY_SKIP
 from core.download_manager import DownloadManager
 from core.models import Download
 from gui.i18n import t
 from gui.models_qt import _format_size
-
-_PRIORITY_SKIP = 0
-_PRIORITY_NORMAL = 4
 
 _COL_NAME = 0
 _COL_SIZE = 1
@@ -33,6 +39,10 @@ class TorrentFilesDialog(QDialog):
 
         layout = QVBoxLayout(self)
 
+        warning = QLabel(t("lbl_torrent_files_delete_warning"), self)
+        warning.setWordWrap(True)
+        layout.addWidget(warning)
+
         self._table = QTableWidget(len(self._files), 2, self)
         self._table.setHorizontalHeaderLabels([t("col_file_name"), t("col_file_size")])
         self._table.horizontalHeader().setStretchLastSection(False)
@@ -42,7 +52,7 @@ class TorrentFilesDialog(QDialog):
         for row, file_info in enumerate(self._files):
             name_item = QTableWidgetItem(file_info["path"])
             name_item.setFlags(name_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
-            checked = file_info["priority"] != _PRIORITY_SKIP
+            checked = file_info["priority"] != PRIORITY_SKIP
             name_item.setCheckState(Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked)
             self._table.setItem(row, _COL_NAME, name_item)
             self._table.setItem(row, _COL_SIZE, QTableWidgetItem(_format_size(file_info["size_bytes"])))
@@ -61,7 +71,7 @@ class TorrentFilesDialog(QDialog):
         priorities = {}
         for row, file_info in enumerate(self._files):
             checked = self._table.item(row, _COL_NAME).checkState() == Qt.CheckState.Checked
-            priorities[file_info["index"]] = _PRIORITY_NORMAL if checked else _PRIORITY_SKIP
+            priorities[file_info["index"]] = PRIORITY_NORMAL if checked else PRIORITY_SKIP
         self._manager.set_file_priorities(self._download, priorities)
         self._manager.set_sequential_download(self._download, self._sequential_check.isChecked())
         self.accept()

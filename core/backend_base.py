@@ -133,6 +133,15 @@ class NetworkBackend(ABC):
         backends que no soportan multi-archivo."""
         return
 
+    def delete_deselected_files(self, download: Download, indices: list[int]) -> None:
+        """Borra del disco el contenido ya descargado de los archivos de
+        un torrent multi-archivo que el usuario acaba de desmarcar en el
+        diálogo de selección (por índice, mismo criterio que `list_files`/
+        `set_file_priorities`), para no dejar basura parcial de algo que
+        ya no se quiere. No hace nada en los backends que no soportan
+        multi-archivo."""
+        return
+
     def set_sequential_download(self, download: Download, enabled: bool) -> None:
         """Activa/desactiva la descarga secuencial (orden de piezas de
         principio a fin en vez de rarest-first), útil para poder reproducir
