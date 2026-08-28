@@ -20,6 +20,18 @@ STATE_LABEL_KEYS = {
     DownloadState.CANCELLED: "state_cancelled",
 }
 
+# Bug real reportado por el usuario: al arrancar sin estar conectado a
+# una red, sus descargas seguían mostrando "Descargando"/"Buscando
+# fuentes"/"En cola" -estados que venían de la última sesión, cuando sí
+# había conexión- lo cual es imposible sin conexión. Solo estos estados
+# "activos" dependen de que la red esté conectada; PAUSED/COMPLETED/
+# ERROR/CANCELLED son igual de válidos con o sin conexión.
+_CONNECTIVITY_DEPENDENT_STATES = {
+    DownloadState.QUEUED,
+    DownloadState.SEARCHING_SOURCES,
+    DownloadState.DOWNLOADING,
+}
+
 NETWORK_LABEL_KEYS = {
     Network.TORRENT: "net_torrent",
     Network.SOULSEEK: "net_soulseek",
@@ -150,6 +162,21 @@ class DownloadsModel(QAbstractTableModel):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self._downloads: list[Download] = []
+        # Ninguna red está conectada todavía al construir la ventana
+        # principal (el auto-conectar configurado en Preferencias se
+        # lanza después, ver `ConnectionManager.autoconnect_configured_
+        # networks`), así que hasta que llegue el primer aviso real de
+        # conexión hay que asumir que ninguna lo está.
+        self._connected: dict[Network, bool] = {n: False for n in Network}
+
+    def set_network_connected(self, network: Network, connected: bool) -> None:
+        if self._connected.get(network) == connected:
+            return
+        self._connected[network] = connected
+        for row, d in enumerate(self._downloads):
+            if d.network == network:
+                index = self.index(row, self.COL_STATE)
+                self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole])
 
     def set_downloads(self, downloads: list[Download]) -> None:
         self.beginResetModel()
@@ -293,6 +320,8 @@ class DownloadsModel(QAbstractTableModel):
             if col == self.COL_NAME:
                 return d.title
             if col == self.COL_STATE:
+                if d.state in _CONNECTIVITY_DEPENDENT_STATES and not self._connected.get(d.network, False):
+                    return t("state_disconnected")
                 return t(STATE_LABEL_KEYS[d.state])
             if col == self.COL_SPEED:
                 return _format_speed(d.speed_bps)

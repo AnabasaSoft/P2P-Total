@@ -281,6 +281,7 @@ TRANSLATIONS = {
         "state_completed": "Completado",
         "state_error": "Error",
         "state_cancelled": "Cancelado",
+        "state_disconnected": "Sin conectar",
 
         # --- Preferencias ---
         "settings_title": "Preferencias",
@@ -746,6 +747,7 @@ TRANSLATIONS = {
         "state_completed": "Completed",
         "state_error": "Error",
         "state_cancelled": "Cancelled",
+        "state_disconnected": "Not connected",
 
         "settings_title": "Settings",
         "settings_tab_general": "General",
@@ -1208,6 +1210,7 @@ TRANSLATIONS = {
         "state_completed": "Osatuta",
         "state_error": "Errorea",
         "state_cancelled": "Bertan behera utzita",
+        "state_disconnected": "Konektatu gabe",
 
         "settings_title": "Hobespenak",
         "settings_tab_general": "Orokorra",
@@ -1666,6 +1669,7 @@ TRANSLATIONS = {
         "state_completed": "Terminé",
         "state_error": "Erreur",
         "state_cancelled": "Annulé",
+        "state_disconnected": "Non connecté",
 
         "settings_title": "Préférences",
         "settings_tab_general": "Général",
@@ -2124,6 +2128,7 @@ TRANSLATIONS = {
         "state_completed": "Completato",
         "state_error": "Errore",
         "state_cancelled": "Annullato",
+        "state_disconnected": "Non connesso",
 
         "settings_title": "Preferenze",
         "settings_tab_general": "Generale",
@@ -2582,6 +2587,7 @@ TRANSLATIONS = {
         "state_completed": "Concluído",
         "state_error": "Erro",
         "state_cancelled": "Cancelado",
+        "state_disconnected": "Não conectado",
 
         "settings_title": "Preferências",
         "settings_tab_general": "Geral",
@@ -3041,6 +3047,7 @@ TRANSLATIONS = {
         "state_completed": "Abgeschlossen",
         "state_error": "Fehler",
         "state_cancelled": "Abgebrochen",
+        "state_disconnected": "Nicht verbunden",
 
         "settings_title": "Einstellungen",
         "settings_tab_general": "Allgemein",
@@ -3499,6 +3506,7 @@ TRANSLATIONS = {
         "state_completed": "Completada",
         "state_error": "Error",
         "state_cancelled": "Cancel·lada",
+        "state_disconnected": "Sense connectar",
 
         "settings_title": "Preferències",
         "settings_tab_general": "General",
@@ -3956,6 +3964,7 @@ TRANSLATIONS = {
         "state_completed": "Completada",
         "state_error": "Erro",
         "state_cancelled": "Cancelada",
+        "state_disconnected": "Sen conectar",
 
         "settings_title": "Preferencias",
         "settings_tab_general": "Xeral",
@@ -4413,6 +4422,7 @@ TRANSLATIONS = {
         "state_completed": "Завершено",
         "state_error": "Ошибка",
         "state_cancelled": "Отменено",
+        "state_disconnected": "Не подключено",
 
         "settings_title": "Настройки",
         "settings_tab_general": "Общие",
@@ -4867,6 +4877,7 @@ TRANSLATIONS = {
         "state_completed": "已完成",
         "state_error": "错误",
         "state_cancelled": "已取消",
+        "state_disconnected": "未连接",
 
         "settings_title": "首选项",
         "settings_tab_general": "常规",
@@ -5314,6 +5325,7 @@ TRANSLATIONS = {
         "state_completed": "完了",
         "state_error": "エラー",
         "state_cancelled": "キャンセル済み",
+        "state_disconnected": "未接続",
 
         "settings_title": "環境設定",
         "settings_tab_general": "一般",
@@ -5765,6 +5777,7 @@ TRANSLATIONS = {
         "state_completed": "완료됨",
         "state_error": "오류",
         "state_cancelled": "취소됨",
+        "state_disconnected": "연결 안 됨",
 
         "settings_title": "설정",
         "settings_tab_general": "일반",

@@ -77,7 +77,7 @@ class MainWindow(QMainWindow):
 
         self._search_tab = SearchTab(self._download_manager, self._connection_manager, self._saved_search_manager)
         self._search_tab.download_requested.connect(self._on_download_requested)
-        self._downloads_tab = DownloadsTab(self._download_manager)
+        self._downloads_tab = DownloadsTab(self._download_manager, self._connection_manager)
         self._network_tab = NetworkTab(self._connection_manager, self._download_manager)
         self._network_tab.download_requested.connect(self._on_download_requested)
         self._alerts_tab = AlertsTab(self._saved_search_manager)

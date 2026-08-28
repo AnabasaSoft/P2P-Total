@@ -13,6 +13,7 @@ from PyQt6.QtWidgets import (
 
 from core.download_manager import DownloadManager
 from core.models import Download, DownloadState, Network
+from gui.connection_manager import STATUS_CONNECTED, ConnectionManager
 from gui.desktop_open import open_local_path
 from gui.i18n import t
 from gui.models_qt import DownloadsModel, DownloadsSortProxy
@@ -22,7 +23,9 @@ from gui.widgets.torrent_files_dialog import TorrentFilesDialog
 
 
 class DownloadsTab(QWidget):
-    def __init__(self, download_manager: DownloadManager, parent=None) -> None:
+    def __init__(
+        self, download_manager: DownloadManager, connection_manager: ConnectionManager, parent=None,
+    ) -> None:
         super().__init__(parent)
         self._manager = download_manager
 
@@ -62,6 +65,17 @@ class DownloadsTab(QWidget):
         self._model.set_downloads(self._manager.load_history())
         self._manager.on_progress(self._on_progress)
         self._model.order_changed.connect(self._on_order_changed)
+
+        # Bug real reportado por el usuario: al arrancar sin conexión a
+        # una red, sus descargas seguían mostrando el estado
+        # "Descargando"/"Buscando fuentes"/"En cola" persistido de la
+        # última sesión conectada, lo cual es imposible sin conexión.
+        for network in Network:
+            self._model.set_network_connected(network, connection_manager.is_connected(network))
+        connection_manager.status_changed.connect(self._on_network_status_changed)
+
+    def _on_network_status_changed(self, network_value: str, status: str, _message: str) -> None:
+        self._model.set_network_connected(Network(network_value), status == STATUS_CONNECTED)
 
     def add_download(self, download: Download) -> None:
         self._model.add_download(download)

@@ -6338,3 +6338,110 @@ una vez el primero ya terminó/se marcó `COMPLETED`; permite dos
 descargas de fuentes distintas en paralelo sin problema), usando un
 backend simulado para no depender de libtorrent real. Suite completa
 de pytest en verde: 241/241.
+
+### Arreglo: pausar un torrent no sobrevivía a reiniciar la app
+
+Bug real reportado por el usuario: "el estado de pausa o descargando
+debe guardarse entre sesiones". El estado "descargando" ya se
+persistía bien (`_poll_loop` notifica a la base de datos en cada
+vuelta mientras el torrent avanza), pero pausar uno y cerrar la app no
+-al reabrirla, el torrent volvía a arrancar como si nunca se hubiera
+pausado.
+
+Causa: `TorrentBackend.pause_download`/`resume_download` cambiaban
+`download.state` en memoria pero nunca avisaban al
+`DownloadManager` (que es quien escribe en la base de datos, vía el
+callback de progreso registrado con `subscribe_progress`). Los otros
+cuatro backends (DC++, Gnutella2, Soulseek, eMule) sí llaman a
+`self._notify()`/`self._progress_callback()` justo después de pausar o
+reanudar; en BitTorrent esa notificación dependía en cambio de
+`_poll_loop`, que a propósito se salta el aviso mientras el torrent
+está en pausa (para no generar tráfico de progreso de algo que no
+avanza) — así que el cambio a `PAUSED` nunca llegaba a la base de
+datos, y al reiniciar la app `reattach_active_downloads` leía el
+último estado persistido (`DOWNLOADING`/`SEARCHING_SOURCES`, el de
+antes de pausar) y lo retomaba con normalidad.
+
+Se añadió una llamada explícita a `self._progress_callback(download)`
+al final de `pause_download` y `resume_download`, igual que ya hacían
+el resto de backends. Validado con un test nuevo,
+`test_pause_and_resume_notify_progress_callback` en
+`tests/test_torrent_backend.py`, que se suscribe con
+`subscribe_progress` y comprueba que pausar y reanudar generan
+exactamente una notificación cada uno con el estado correcto. Suite
+completa de pytest en verde: 242/242.
+
+### Arreglo: `kde-open` abortaba con SIGABRT al abrir el navegador desde el aviso de actualización
+
+Bug real reportado por el usuario, con volcado de núcleo real
+capturado por `systemd-coredump`: en un escritorio KDE, el botón
+"Descargar" del diálogo de "hay una versión nueva" (instalada vía
+`.rpm`) hacía abortar a `kde-open` -el ayudante de KDE para abrir
+URLs, que aquí sustituye a `xdg-open`- con `SIGABRT`, justo dentro de
+`QGuiApplicationPrivate::createEventDispatcher` (el punto en el que Qt
+carga el plugin de la plataforma de ventanas).
+
+Causa: la misma familia de bug que el arreglo anterior sobre
+`LD_LIBRARY_PATH` (ver "el botón 'Descargar' del aviso de
+actualización no abría el navegador en el `.rpm` instalado"), pero con
+una variable de entorno distinta. El *runtime hook* que PyInstaller
+inyecta para cualquier build empaquetado con PyQt6
+(`pyi_rth_pyqt6.py`) fija, al arrancar el proceso,
+`QT_PLUGIN_PATH`/`QML2_IMPORT_PATH` apuntando a los plugins de Qt6
+*empaquetados* con p2p-total -sin guardar ningún valor "original" al
+que restaurar después, a diferencia de `LD_LIBRARY_PATH` (que sí tiene
+su copia de seguridad en `LD_LIBRARY_PATH_ORIG`, creada por el propio
+bootloader)-. `QDesktopServices.openUrl()`, al lanzar `kde-open` como
+subproceso, le pasa ese entorno ya contaminado: `kde-open` -un Qt6 del
+propio sistema, ajeno por completo a la app- intentaba entonces cargar
+el plugin de plataforma (`libqxcb.so`) de la versión de Qt6 empaquetada
+en vez de la suya propia, incompatible a nivel de ABI, y Qt aborta el
+proceso con `qFatal()` en cuanto lo detecta.
+
+Se amplió `_system_library_path()` en `gui/desktop_open.py` para que,
+además de restaurar `LD_LIBRARY_PATH` a `LD_LIBRARY_PATH_ORIG`,
+elimine también `QT_PLUGIN_PATH`/`QML2_IMPORT_PATH` del entorno solo
+mientras dure la llamada a `QDesktopServices.openUrl()`/
+`fromLocalFile()`, reponiendo después el valor contaminado -el propio
+proceso `p2p-total` sí los necesita para seguir funcionando-. Validado
+con un test nuevo, `tests/test_desktop_open_env_cleanup.py`, que
+simula un build empaquetado (`sys.frozen = True`) con y sin
+`LD_LIBRARY_PATH_ORIG` presente y comprueba que las tres variables se
+limpian durante la llamada y se restauran exactamente a su valor
+anterior después. Suite completa de pytest en verde: 250/250.
+
+### Arreglo: las descargas seguían mostrando "Descargando"/"En cola" aunque la red estuviera desconectada
+
+Bug real reportado por el usuario: "ahora mismo no estoy conectado a
+bitorrent, pero las descargas pone descargando cuando es imposible
+debería poner en sin conectar". Al arrancar la app sin conectar
+todavía a una red (o tras desconectarla a mano), la pestaña
+Transferencias seguía mostrando el estado "Descargando"/"Buscando
+fuentes"/"En cola" persistido de la última sesión en la que sí hubo
+conexión -un estado que no puede ser cierto sin conexión al backend
+que lo produce.
+
+Causa: `DownloadsModel` (en `gui/models_qt.py`) solo conocía el
+`DownloadState` guardado en cada `Download`, sin ninguna noción de si
+la red a la que pertenece está conectada ahora mismo -esa información
+solo la tiene `ConnectionManager`, y nunca se le pasaba a la pestaña
+de Transferencias.
+
+Se añadió `DownloadsModel.set_network_connected(network, connected)`,
+que guarda el estado de conexión por red y emite `dataChanged` para la
+columna Estado de las filas afectadas; al pintar esa columna, si el
+estado persistido es uno de los "activos" (`QUEUED`,
+`SEARCHING_SOURCES`, `DOWNLOADING`) y la red no está conectada, se
+muestra la nueva etiqueta "Sin conectar" en su lugar -los estados que
+no dependen de la conexión (`PAUSED`, `COMPLETED`, `ERROR`,
+`CANCELLED`) no se tocan-. `DownloadsTab` ahora recibe el
+`ConnectionManager` y se suscribe a su señal `status_changed` para
+mantener esta información al día en tiempo real, además de fijar el
+estado inicial de las cinco redes al construirse. Se añadió la clave
+de traducción `state_disconnected` en los 13 idiomas soportados.
+Validado con un test nuevo, `tests/test_downloads_model_connectivity.py`,
+que cubre mostrar "Sin conectar" mientras no hay conexión, volver al
+estado real al conectar, volver a "Sin conectar" al desconectar de
+nuevo, dejar intactos los estados independientes de la conexión, y que
+el cambio de una red no afecte a las descargas de otra. Suite completa
+de pytest en verde: 250/250.

@@ -364,6 +364,36 @@ async def test_pause_download_stays_paused_across_poll_ticks(tmp_path):
         await backend.disconnect()
 
 
+@pytest.mark.asyncio
+async def test_pause_and_resume_notify_progress_callback(tmp_path):
+    """Bug real reportado por el usuario: el estado de pausa no
+    sobrevivía a reiniciar la app. `_poll_loop` se salta a propósito la
+    notificación de progreso mientras el torrent está en pausa (para no
+    generar tráfico de un torrent que no avanza), así que sin un aviso
+    explícito al pausar/reanudar -que sí tenían ya el resto de
+    backends- `DownloadManager` nunca llegaba a persistir el cambio de
+    estado en la base de datos."""
+    source = tmp_path / "compartido.bin"
+    source.write_bytes(b"x" * 50000)
+    dest_torrent = tmp_path / "compartido.torrent"
+
+    backend = TorrentBackend()
+    await backend.connect()
+    notified: list[DownloadState] = []
+    backend.subscribe_progress(lambda d: notified.append(d.state))
+    try:
+        download = await backend.create_torrent(str(source), str(dest_torrent))
+        notified.clear()
+
+        await backend.pause_download(download)
+        assert notified == [DownloadState.PAUSED]
+
+        await backend.resume_download(download)
+        assert notified == [DownloadState.PAUSED, DownloadState.DOWNLOADING]
+    finally:
+        await backend.disconnect()
+
+
 class _FakeStatus:
     """Sustituto mínimo de `lt.torrent_status` para probar la lógica de
     límite de ratio/tiempo de siembra de `_poll_loop` sin depender de

@@ -566,6 +566,16 @@ class TorrentBackend(NetworkBackend):
             entry["handle"].unset_flags(lt.torrent_flags.auto_managed)
             entry["handle"].pause()
             download.state = DownloadState.PAUSED
+            # Bug real reportado por el usuario: el estado de pausa no
+            # sobrevivía a reiniciar la app. `_poll_loop` se salta a
+            # propósito la notificación mientras el torrent está en
+            # pausa (para no generar tráfico de progreso de un torrent
+            # que no avanza), así que sin este aviso explícito -que sí
+            # tienen ya el resto de backends- la base de datos nunca
+            # se enteraba de que se había pausado, y al reabrir la app
+            # `reattach_download` la retomaba como si nada.
+            if self._progress_callback:
+                self._progress_callback(download)
 
     async def resume_download(self, download: Download) -> None:
         entry = self._find_entry(download)
@@ -573,6 +583,8 @@ class TorrentBackend(NetworkBackend):
             entry["handle"].set_flags(lt.torrent_flags.auto_managed)
             entry["handle"].resume()
             download.state = DownloadState.DOWNLOADING
+            if self._progress_callback:
+                self._progress_callback(download)
 
     async def cancel_download(self, download: Download) -> None:
         """No borra los datos ya descargados del disco (a diferencia de
