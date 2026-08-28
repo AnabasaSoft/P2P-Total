@@ -91,6 +91,9 @@ velocidad globales y por descarga.
   ventana.
 - Carpeta vigilada: cualquier `.torrent` que aparezca en una carpeta
   configurada se añade solo, sin abrirlo a mano.
+- Filtro de resultados por tipo de archivo y por rango de tamaño
+  (mínimo/máximo), para descartar archivos falsos o mal nombrados sin
+  tener que revisarlos uno a uno.
 
 ### Transferencias
 - Cola de descargas con prioridad reordenable (arrastrar filas o
@@ -104,6 +107,9 @@ velocidad globales y por descarga.
   durante una franja horaria del día (p.ej. limitar más de noche).
 - **Pausar y reanudar de verdad**: retoma desde los bytes ya escritos
   en disco, no reinicia desde cero, en las cinco redes.
+- Límite de ratio y/o tiempo de siembra en BitTorrent (Preferencias →
+  BitTorrent): al superar el que se haya configurado, el torrent se
+  pausa solo, sin dejar de sembrar indefinidamente.
 - **Las descargas activas sobreviven a cerrar y reabrir la
   aplicación**: al reconectar cada red, se reconstruye automáticamente
   el estado necesario para retomar cualquier descarga que seguía en
@@ -121,6 +127,9 @@ velocidad globales y por descarga.
   DC++, Gnutella2 y eMule/eD2k tienen implementado desde cero el lado
   servidor de su protocolo (responder búsquedas, atender peticiones de
   descarga, gestionar subidas firewalled/LowID vía *push*/*callback*).
+- Crear un `.torrent` nuevo desde un archivo o carpeta propios (menú
+  Archivo → "Crear torrent…"), con trackers, comentario y opción de
+  torrent privado, empezando a sembrarlo de inmediato.
 - Indexado de carpetas compartidas con cálculo de hash por red (SHA1,
   MD4+AICH) en una sola pasada.
 - Cola de subida con slots limitados, lista de amigos y sistema de
@@ -132,6 +141,9 @@ velocidad globales y por descarga.
   presentes en cada sala.
 - DC++: chat del hub (canal compartido por todos los conectados) y
   mensajes privados.
+- Aviso nativo del sistema al recibir un mensaje privado con la
+  ventana minimizada u oculta en la bandeja, configurable en
+  Preferencias.
 
 ### Conectividad y privacidad
 - Proxy SOCKS5 y HTTP para las conexiones salientes de las cinco redes
@@ -143,6 +155,10 @@ velocidad globales y por descarga.
 - Ofuscación de protocolo (RC4) en eD2k para esquivar el *throttling*
   de tráfico P2P de algunos proveedores de internet, configurable en
   los tres modos del eMule real.
+- Filtro de IPs estilo aMule/eMule (Preferencias → Filtro de IPs):
+  carga un `ipfilter.dat` en el formato clásico Bluetack y bloquea
+  conexiones -salientes y entrantes- hacia/desde cualquier IP de un
+  rango marcado como peligroso, aplicado a las cinco redes.
 - **Contraseñas guardadas en el almacén de credenciales nativo del
   sistema operativo** (Secret Service/GNOME Keyring/KWallet en Linux,
   Keychain en macOS, Credential Manager en Windows) en vez de en texto
@@ -157,6 +173,10 @@ velocidad globales y por descarga.
 - Pestañas de Búsqueda (con sub-pestañas independientes por búsqueda),
   Transferencias, Red (detalle de conexión en vivo por red), Chat,
   Alertas y Estadísticas.
+- La pestaña Estadísticas incluye una gráfica de velocidad en tiempo
+  real (bajada/subida agregadas de las cinco redes, últimos 5 minutos),
+  dibujada con `QPainter` puro al estilo de qBittorrent/Transmission,
+  además de los totales acumulados y el histórico diario ya existentes.
 - Lista de servidores/hubs conocidos (DC++, Gnutella2 y eMule) con
   usuarios y ficheros compartidos cuando el protocolo los expone,
   filtro de texto, y clic derecho para conectar directamente sin
@@ -287,7 +307,7 @@ así que están reimplementadas desde cero estudiando el protocolo real.
 
 ## Estado del proyecto y hoja de ruta
 
-**Versión actual: 1.0.6** ([listado completo de releases](https://github.com/AnabasaSoft/P2P-Total/releases)).
+([listado completo de releases](https://github.com/AnabasaSoft/P2P-Total/releases)).
 
 Las **cinco redes** (BitTorrent, Soulseek, DC++, Gnutella2, eMule/Kad)
 y la **GUI completa** están implementadas y validadas contra
@@ -313,6 +333,20 @@ protocolo real los expone) con clic derecho para conectar directamente
 al elegido, sin pasar por Preferencias — Soulseek (un único servidor
 central) y BitTorrent (sin concepto de "servidor", solo trackers por
 torrent) quedan fuera por no aplicar.
+
+Con el backlog original (36 puntos) completado, se ha cerrado también
+una **segunda ronda de mejoras** (puntos 37 a 42): crear un `.torrent`
+nuevo desde contenido propio, el límite de ratio/tiempo de siembra en
+BitTorrent (ver más arriba, en
+[Compartir y subir](#compartir-y-subir)), el filtro de IPs estilo
+aMule/eMule (ver [Conectividad y privacidad](#conectividad-y-privacidad)),
+el filtro de resultados de búsqueda por tamaño (ver
+[Búsqueda y descubrimiento](#búsqueda-y-descubrimiento)), la
+notificación nativa de mensajes de chat (ver
+[Chat y funciones sociales](#chat-y-funciones-sociales)) y la gráfica
+de velocidad en tiempo real en Estadísticas (ver más arriba, en
+[Interfaz y experiencia de uso](#interfaz-y-experiencia-de-uso)).
+Detalle completo de cada punto en `DEVLOG.md`.
 
 Sobre **BitTorrent** en particular: negocia cifrado de protocolo
 (MSE/PE, para dificultar el filtrado por parte de ISPs que limitan el

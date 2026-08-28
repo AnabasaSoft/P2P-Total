@@ -13,7 +13,7 @@ con chat conectada a la vez."""
 
 import asyncio
 
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QHBoxLayout, QInputDialog, QLineEdit, QListWidget, QPushButton, QTabWidget, QTextEdit, QVBoxLayout, QWidget,
 )
@@ -121,6 +121,12 @@ class _PrivateChatWidget(QWidget):
 
 
 class ChatTab(QWidget):
+    # Punto 41 del backlog: red (valor de Network), remitente, mensaje --
+    # emitida solo para mensajes privados (no de sala, para no generar
+    # ruido en canales concurridos), para que MainWindow decida si avisa
+    # por bandeja del sistema según Preferencias y el estado de la ventana.
+    private_message_received = pyqtSignal(str, str, str)
+
     def __init__(self, connection_manager: ConnectionManager, parent=None) -> None:
         super().__init__(parent)
         self._manager = connection_manager
@@ -287,3 +293,4 @@ class ChatTab(QWidget):
         elif etype == "private_message":
             widget = self._open_pm(network, event["user"])
             widget.append_message(False, event["message"])
+            self.private_message_received.emit(network.value, event["user"], event["message"])

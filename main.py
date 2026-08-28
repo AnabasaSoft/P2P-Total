@@ -59,6 +59,7 @@ from core.backend_base import BackendRegistry
 from core.bandwidth_scheduler import effective_limits_kbps
 from core.config import CONFIG_PATH, load_config, save_config
 from core.download_manager import DownloadManager
+from core.ip_filter import apply_config as apply_ip_filter_config
 from core.models import Network, SearchResult
 from core.rate_limiter import apply_global_limits
 from core.sharing import SharedLibrary
@@ -196,12 +197,14 @@ async def cmd_download(query: str, dest: str, timeout: float, network: Network,
                         hub_override: str | None = None) -> None:
     config = load_config()
     apply_global_limits(config)  # límites globales (punto 2 del backlog, con planificador por franja horaria del 34.5); las cuatro redes "manuales" comparten el limitador de core.rate_limiter
+    apply_ip_filter_config(config)  # filtro de IPs (punto 39 del backlog)
     download_kbps, upload_kbps = effective_limits_kbps(config)
 
     if network == Network.TORRENT:
         torrent_backend = TorrentBackend(proxy=config.proxy)
         await torrent_backend.connect()
         torrent_backend.set_global_limits(download_kbps * 1024, upload_kbps * 1024)
+        torrent_backend.set_seed_limits(config.torrent.seed_ratio_limit, config.torrent.seed_time_limit_minutes)
         BackendRegistry.register(torrent_backend)
 
         manager = DownloadManager()

@@ -60,6 +60,7 @@ from typing import Callable
 
 from core import upnp
 from core.backend_base import NetworkBackend
+from core.ip_filter import ip_filter, peer_ip_from_writer as _peer_ip_from_writer
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
 from core.proxy import open_connection as proxy_open_connection
@@ -978,6 +979,13 @@ class SoulseekBackend(NetworkBackend):
             asyncio.create_task(self._handle_incoming_peer_connection(peer))
 
     async def _handle_incoming_connection(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        # Punto 39 del backlog: descarta antes incluso de gastar un hueco
+        # del "gate" de conexiones concurrentes -el camino saliente ya pasa
+        # por el mismo filtro dentro de `core.proxy.open_connection`.
+        peer_ip = _peer_ip_from_writer(writer)
+        if peer_ip and ip_filter.is_blocked(peer_ip):
+            writer.close()
+            return
         if self._incoming_gate_count >= self._incoming_gate_limit:
             writer.close()
             return

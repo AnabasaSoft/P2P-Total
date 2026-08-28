@@ -36,6 +36,7 @@ from core import upnp
 from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.http_client import http_get
+from core.ip_filter import ip_filter, peer_ip_from_writer as _peer_ip_from_writer
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
 from core.proxy import open_connection as proxy_open_connection
@@ -799,6 +800,15 @@ class DCPPBackend(NetworkBackend):
             asyncio.ensure_future(self._hub.send(sr))
 
     async def _handle_incoming_peer(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        # Punto 39 del backlog: descarta en silencio (sin decir ni $MyNick)
+        # cualquier conexión entrante de una IP bloqueada por el filtro -el
+        # camino saliente ya pasa por el mismo filtro dentro de
+        # `core.proxy.open_connection`, así que esto solo cubre el caso que
+        # ese otro punto no puede: alguien conectando hacia nosotros.
+        peer_ip = _peer_ip_from_writer(writer)
+        if peer_ip and ip_filter.is_blocked(peer_ip):
+            writer.close()
+            return
         conn = _NMDCConnection(reader, writer)
         try:
             await conn.send(f"$MyNick {self._nickname}")

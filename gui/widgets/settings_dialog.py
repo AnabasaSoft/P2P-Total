@@ -50,6 +50,7 @@ class SettingsDialog(QDialog):
         tabs.addTab(self._build_emule_tab(), t("settings_tab_emule"))
         tabs.addTab(self._build_proxy_tab(), t("settings_tab_proxy"))
         tabs.addTab(self._build_remote_control_tab(), t("settings_tab_remote"))
+        tabs.addTab(self._build_ip_filter_tab(), t("settings_tab_ip_filter"))
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Save | QDialogButtonBox.StandardButton.Cancel
@@ -203,6 +204,10 @@ class SettingsDialog(QDialog):
         self._notify_on_finish_check.setChecked(self._config.ui.notify_on_download_finish)
         form.addRow(t("lbl_notify_on_finish"), self._notify_on_finish_check)
 
+        self._notify_on_chat_check = QCheckBox()
+        self._notify_on_chat_check.setChecked(self._config.ui.notify_on_chat_message)
+        form.addRow(t("lbl_notify_on_chat"), self._notify_on_chat_check)
+
         self._auto_verify_check = QCheckBox()
         self._auto_verify_check.setChecked(self._config.auto_verify_on_complete)
         self._auto_verify_check.setToolTip(t("auto_verify_tooltip"))
@@ -243,6 +248,23 @@ class SettingsDialog(QDialog):
         self._torrent_timeout_spin.setSuffix(" s")
         self._torrent_timeout_spin.setValue(self._config.torrent.search_timeout)
         form.addRow(t("lbl_search_timeout"), self._torrent_timeout_spin)
+
+        # Punto 38 del backlog: al llegar a cualquiera de los dos límites
+        # (el que no sea 0), la descarga se pausa sola -no se cancela ni se
+        # borra nada, igual que pulsar "Pausar" a mano.
+        self._torrent_seed_ratio_spin = QDoubleSpinBox()
+        self._torrent_seed_ratio_spin.setRange(0.0, 100.0)
+        self._torrent_seed_ratio_spin.setSingleStep(0.1)
+        self._torrent_seed_ratio_spin.setSpecialValueText(t("spin_unlimited"))
+        self._torrent_seed_ratio_spin.setValue(self._config.torrent.seed_ratio_limit)
+        form.addRow(t("lbl_seed_ratio_limit"), self._torrent_seed_ratio_spin)
+
+        self._torrent_seed_time_spin = QSpinBox()
+        self._torrent_seed_time_spin.setRange(0, 100000)
+        self._torrent_seed_time_spin.setSuffix(" min")
+        self._torrent_seed_time_spin.setSpecialValueText(t("spin_unlimited"))
+        self._torrent_seed_time_spin.setValue(self._config.torrent.seed_time_limit_minutes)
+        form.addRow(t("lbl_seed_time_limit"), self._torrent_seed_time_spin)
 
         return widget
 
@@ -464,6 +486,36 @@ class SettingsDialog(QDialog):
 
         return widget
 
+    def _build_ip_filter_tab(self) -> QWidget:
+        """Punto 39 del backlog: filtro de IPs estilo aMule/eMule real
+        (ipfilter.dat, formato Bluetack) -no es propio de ninguna red, se
+        aplica a las cinco por igual (ver core/ip_filter.py)."""
+        widget = QWidget()
+        form = QFormLayout(widget)
+
+        self._ip_filter_enabled_check = QCheckBox()
+        self._ip_filter_enabled_check.setChecked(self._config.ip_filter_enabled)
+        form.addRow(t("lbl_ip_filter_enabled"), self._ip_filter_enabled_check)
+
+        path_row = QHBoxLayout()
+        self._ip_filter_path_edit = QLineEdit(self._config.ip_filter_path)
+        path_row.addWidget(self._ip_filter_path_edit)
+        browse_button = QPushButton(t("btn_browse"))
+        browse_button.clicked.connect(self._on_browse_ip_filter_path)
+        path_row.addWidget(browse_button)
+        form.addRow(t("lbl_ip_filter_path"), path_row)
+
+        self._ip_filter_level_spin = QSpinBox()
+        self._ip_filter_level_spin.setRange(0, 255)
+        self._ip_filter_level_spin.setValue(self._config.ip_filter_level)
+        form.addRow(t("lbl_ip_filter_level"), self._ip_filter_level_spin)
+
+        note = QLabel(t("lbl_ip_filter_note"))
+        note.setWordWrap(True)
+        form.addRow(note)
+
+        return widget
+
     # ---- Acciones ----
 
     def _on_generate_remote_token(self) -> None:
@@ -478,6 +530,11 @@ class SettingsDialog(QDialog):
         directory = QFileDialog.getExistingDirectory(self, t("btn_browse"), self._watch_dir_edit.text())
         if directory:
             self._watch_dir_edit.setText(directory)
+
+    def _on_browse_ip_filter_path(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, t("btn_browse"), self._ip_filter_path_edit.text())
+        if path:
+            self._ip_filter_path_edit.setText(path)
 
     def _on_add_shared_dir(self) -> None:
         directory = QFileDialog.getExistingDirectory(self, t("btn_add_folder"))
@@ -552,11 +609,17 @@ class SettingsDialog(QDialog):
         config.ui.minimize_to_tray = self._minimize_to_tray_check.isChecked()
         config.ui.minimize_to_tray_on_minimize = self._minimize_to_tray_on_minimize_check.isChecked()
         config.ui.notify_on_download_finish = self._notify_on_finish_check.isChecked()
+        config.ui.notify_on_chat_message = self._notify_on_chat_check.isChecked()
         config.auto_verify_on_complete = self._auto_verify_check.isChecked()
+        config.ip_filter_enabled = self._ip_filter_enabled_check.isChecked()
+        config.ip_filter_path = self._ip_filter_path_edit.text().strip()
+        config.ip_filter_level = self._ip_filter_level_spin.value()
 
         config.torrent.max_results = self._torrent_max_results_spin.value()
         config.torrent.search_timeout = self._torrent_timeout_spin.value()
         config.torrent.auto_connect = self._torrent_auto_connect_check.isChecked()
+        config.torrent.seed_ratio_limit = self._torrent_seed_ratio_spin.value()
+        config.torrent.seed_time_limit_minutes = self._torrent_seed_time_spin.value()
 
         config.soulseek.username = self._slsk_user_edit.text().strip()
         config.soulseek.password = self._slsk_pass_edit.text()

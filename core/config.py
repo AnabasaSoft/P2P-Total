@@ -154,6 +154,11 @@ class TorrentConfig:
     max_results: int = 0      # 0 = ilimitado
     search_timeout: float = 15.0
     auto_connect: bool = False  # conectar esta red sola al arrancar la GUI (ver ConnectionManager.autoconnect_configured_networks)
+    # Punto 38 del backlog: al alcanzar cualquiera de los dos límites (el
+    # que no sea 0) durante la siembra, TorrentBackend pausa el torrent
+    # solo -no cancela ni borra nada, igual que un pause manual.
+    seed_ratio_limit: float = 0.0        # 0 = sin límite (subido / tamaño total)
+    seed_time_limit_minutes: int = 0     # 0 = sin límite, minutos sembrando tras completarse
 
 
 @dataclass
@@ -234,6 +239,8 @@ class UIConfig:
     notify_on_download_finish: bool = True  # aviso nativo del sistema al completar
                                              # o fallar una descarga (vía el icono
                                              # de la bandeja, si hay uno disponible)
+    notify_on_chat_message: bool = True  # aviso nativo al recibir un mensaje privado
+                                          # de chat con la ventana minimizada/oculta
 
 
 @dataclass
@@ -300,6 +307,13 @@ class Config:
     auto_retry_delay_seconds: float = 30.0  # espera entre el error y cada reintento automático
     watched_torrent_dir: str = ""         # vacío = desactivado (punto 26 del backlog, ver core/watch_folder.py)
     auto_verify_on_complete: bool = False  # verificar automáticamente el contenido al completar una descarga (punto 27), solo redes que lo soporten
+    # Punto 39 del backlog: filtro de IPs estilo aMule/eMule real
+    # (ipfilter.dat, formato Bluetack). No es propio de ninguna red -se
+    # aplica a las cinco por igual (ver core/ip_filter.py)-, así que vive
+    # aquí y no en ninguna *Config por red.
+    ip_filter_enabled: bool = False
+    ip_filter_path: str = ""              # vacío = sin fichero configurado
+    ip_filter_level: int = 127            # umbral de nivel de acceso (0-255, igual convención y valor por defecto que aMule)
 
     def is_soulseek_configured(self) -> bool:
         return bool(self.soulseek.username and self.soulseek.password)
@@ -347,6 +361,8 @@ def load_config(path: Path | None = None) -> Config:
             max_results=torrent_data.get("max_results", 0),
             search_timeout=torrent_data.get("search_timeout", 15.0),
             auto_connect=torrent_data.get("auto_connect", False),
+            seed_ratio_limit=torrent_data.get("seed_ratio_limit", 0.0),
+            seed_time_limit_minutes=torrent_data.get("seed_time_limit_minutes", 0),
         ),
         soulseek=SoulseekConfig(
             username=soulseek_data.get("username", ""),
@@ -395,6 +411,7 @@ def load_config(path: Path | None = None) -> Config:
             minimize_to_tray=ui_data.get("minimize_to_tray", False),
             minimize_to_tray_on_minimize=ui_data.get("minimize_to_tray_on_minimize", False),
             notify_on_download_finish=ui_data.get("notify_on_download_finish", True),
+            notify_on_chat_message=ui_data.get("notify_on_chat_message", True),
         ),
         proxy=ProxyConfig(
             enabled=proxy_data.get("enabled", False),
@@ -431,6 +448,9 @@ def load_config(path: Path | None = None) -> Config:
         auto_retry_delay_seconds=data.get("auto_retry_delay_seconds", 30.0),
         watched_torrent_dir=data.get("watched_torrent_dir", ""),
         auto_verify_on_complete=data.get("auto_verify_on_complete", False),
+        ip_filter_enabled=data.get("ip_filter_enabled", False),
+        ip_filter_path=data.get("ip_filter_path", ""),
+        ip_filter_level=data.get("ip_filter_level", 127),
     )
 
 
@@ -481,6 +501,9 @@ def save_config(config: Config, path: Path | None = None) -> None:
         "auto_retry_delay_seconds": config.auto_retry_delay_seconds,
         "watched_torrent_dir": config.watched_torrent_dir,
         "auto_verify_on_complete": config.auto_verify_on_complete,
+        "ip_filter_enabled": config.ip_filter_enabled,
+        "ip_filter_path": config.ip_filter_path,
+        "ip_filter_level": config.ip_filter_level,
     }
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)

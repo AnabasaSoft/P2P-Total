@@ -33,6 +33,7 @@ from gui.resources import ICON_PATH
 from gui.widgets.about_dialog import AboutDialog
 from gui.widgets.alerts_tab import AlertsTab
 from gui.widgets.chat_tab import ChatTab
+from gui.widgets.create_torrent_dialog import CreateTorrentDialog
 from gui.widgets.downloads_tab import DownloadsTab
 from gui.widgets.emule_friends_dialog import EMuleFriendsDialog
 from gui.widgets.network_tab import NetworkTab
@@ -82,6 +83,7 @@ class MainWindow(QMainWindow):
         self._alerts_tab.download_requested.connect(self._on_download_requested)
         self._alerts_tab.alerts_changed.connect(self._update_alerts_tab_title)
         self._chat_tab = ChatTab(self._connection_manager)
+        self._chat_tab.private_message_received.connect(self._on_private_message_for_notifications)
         self._stats_tab = StatsTab(self._connection_manager)
 
         tabs = QTabWidget()
@@ -181,6 +183,9 @@ class MainWindow(QMainWindow):
         add_torrent_action = QAction(t("menu_file_add_torrent"), self)
         add_torrent_action.triggered.connect(self._on_add_torrent_file)
         file_menu.addAction(add_torrent_action)
+        create_torrent_action = QAction(t("menu_file_create_torrent"), self)
+        create_torrent_action.triggered.connect(self._on_create_torrent)
+        file_menu.addAction(create_torrent_action)
         file_menu.addSeparator()
         settings_action = QAction(t("menu_file_settings"), self)
         settings_action.triggered.connect(self._on_open_settings)
@@ -310,6 +315,40 @@ class MainWindow(QMainWindow):
             return
         asyncio.ensure_future(self._add_torrent(path))
 
+    def _on_create_torrent(self) -> None:
+        # Punto 37 del backlog: crear un .torrent nuevo a partir de
+        # contenido propio y sembrarlo de inmediato.
+        dialog = CreateTorrentDialog(self)
+        if not dialog.exec():
+            return
+        default_name = Path(dialog.source_path).name + ".torrent"
+        dest_path, _ = QFileDialog.getSaveFileName(
+            self, t("dlg_save_torrent_title"), default_name, t("dlg_add_torrent_filter")
+        )
+        if not dest_path:
+            return
+        asyncio.ensure_future(self._create_torrent(
+            dialog.source_path, dest_path, dialog.trackers, dialog.comment, dialog.private
+        ))
+
+    async def _create_torrent(
+        self, source_path: str, dest_torrent_path: str,
+        trackers: list[str], comment: str, private: bool,
+    ) -> None:
+        backend = BackendRegistry.get(Network.TORRENT)
+        if backend is None or not await backend.is_connected():
+            QMessageBox.warning(self, t("app_title"), t("msg_torrent_not_connected"))
+            return
+        try:
+            download = await self._download_manager.create_torrent(
+                source_path, dest_torrent_path, trackers, comment, private
+            )
+        except Exception as exc:
+            QMessageBox.warning(self, t("app_title"), t("msg_create_torrent_error", error=str(exc)))
+            return
+        self._downloads_tab.add_download(download)
+        self._tabs.setCurrentWidget(self._downloads_tab)
+
     def dragEnterEvent(self, event) -> None:
         if event.mimeData().hasUrls() and any(
             url.toLocalFile().lower().endswith(".torrent") for url in event.mimeData().urls()
@@ -416,6 +455,23 @@ class MainWindow(QMainWindow):
                 t("notify_download_failed_body", title=download.title),
                 QSystemTrayIcon.MessageIcon.Warning,
             )
+
+    def _on_private_message_for_notifications(self, _network_value: str, username: str, message: str) -> None:
+        # Punto 41 del backlog: aviso nativo del sistema al recibir un
+        # mensaje privado de chat mientras la ventana está minimizada u
+        # oculta (en la bandeja) -- si está visible y en primer plano, el
+        # propio mensaje ya se ve en la pestaña Chat sin necesidad de aviso.
+        if self._tray_icon is None:
+            return
+        if not load_config().ui.notify_on_chat_message:
+            return
+        if self.isVisible() and not self.isMinimized():
+            return
+        self._tray_icon.showMessage(
+            t("notify_chat_message_title", user=username),
+            message,
+            QSystemTrayIcon.MessageIcon.Information,
+        )
 
     def _on_watch_folder_added(self, filename: str, download: Download | None, error: Exception | None) -> None:
         # Punto 26 del backlog: la carpeta vigilada añadió (o intentó

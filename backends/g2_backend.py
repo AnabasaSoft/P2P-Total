@@ -55,6 +55,7 @@ from core import upnp
 from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.config import _config_dir
+from core.ip_filter import ip_filter, peer_ip_from_writer as _peer_ip_from_writer
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
 from core.proxy import open_connection as proxy_open_connection
@@ -1695,6 +1696,13 @@ class G2Backend(NetworkBackend):
         nosotros un hub, lo único que puede ser es un peer pidiéndonos
         directamente un fichero por HTTP (nos encontró en un /QH2
         nuestro con nuestra propia /NA)."""
+        # Punto 39 del backlog: el camino saliente (conexión al hub, y
+        # descargas HTTP directas a otros peers) ya pasa por el mismo
+        # filtro dentro de `core.proxy.open_connection`.
+        peer_ip = _peer_ip_from_writer(writer)
+        if peer_ip and ip_filter.is_blocked(peer_ip):
+            writer.close()
+            return
         try:
             request_line = await asyncio.wait_for(reader.readline(), timeout=20.0)
         except (asyncio.TimeoutError, asyncio.IncompleteReadError, ConnectionError, OSError):

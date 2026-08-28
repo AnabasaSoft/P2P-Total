@@ -21,6 +21,7 @@ from core.backend_base import NetworkBackend
 from core.bandwidth_scheduler import effective_limits_kbps
 from core.config import load_config
 from core.download_manager import DownloadManager
+from core.ip_filter import apply_config as apply_ip_filter_config
 from core.models import Network
 from core.rate_limiter import apply_global_limits
 from core.sharing import SharedLibrary
@@ -112,6 +113,14 @@ class ConnectionManager(QObject):
         # aquí de forma explícita.
         download_kbps, upload_kbps = effective_limits_kbps(config)
         backend.set_global_limits(download_kbps * 1024, upload_kbps * 1024)
+        # Punto 38: mismo enfoque que los límites de velocidad -no hace
+        # falta reconectar para aplicar un cambio de límite de siembra.
+        backend.set_seed_limits(config.torrent.seed_ratio_limit, config.torrent.seed_time_limit_minutes)
+        # Punto 39: recarga el filtro de IPs global y, si el backend lo
+        # necesita (BitTorrent), sincroniza su copia nativa con los rangos
+        # ya recargados.
+        apply_ip_filter_config(config)
+        backend.reload_ip_filter()
 
     async def disconnect_network(self, network: Network) -> None:
         backend = self._backends.pop(network, None)

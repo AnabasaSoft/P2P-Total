@@ -153,6 +153,23 @@ class DownloadManager:
         download.id = database.insert_download(download)
         return download
 
+    async def create_torrent(
+        self,
+        source_path: str,
+        dest_torrent_path: str,
+        trackers: list[str] | None = None,
+        comment: str = "",
+        private: bool = False,
+    ) -> Download:
+        """Punto 37 del backlog: crear un `.torrent` nuevo a partir de
+        contenido propio y empezar a sembrarlo de inmediato."""
+        backend = BackendRegistry.get(Network.TORRENT)
+        if backend is None:
+            raise RuntimeError("No hay backend registrado para BitTorrent")
+        download = await backend.create_torrent(source_path, dest_torrent_path, trackers, comment, private)
+        download.id = database.insert_download(download)
+        return download
+
     async def reattach_active_downloads(self, network: Network) -> None:
         """Reengancha en el backend las descargas de `network` que
         quedaran activas (QUEUED, SEARCHING_SOURCES, DOWNLOADING o

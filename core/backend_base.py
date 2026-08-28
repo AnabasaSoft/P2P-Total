@@ -99,6 +99,26 @@ class NetworkBackend(ABC):
         sobreescribe."""
         return
 
+    def set_seed_limits(self, ratio_limit: float, time_limit_minutes: int) -> None:
+        """Punto 38 del backlog: límite de ratio (subido/tamaño) y/o tiempo
+        de siembra (0 = sin límite en cada uno), tras el cual el backend se
+        pausa solo. Por defecto no hace nada: solo tiene sentido para
+        BitTorrent, que sigue sembrando en segundo plano tras completar una
+        descarga; el resto de redes no tienen ese concepto."""
+        return
+
+    def reload_ip_filter(self) -> None:
+        """Punto 39 del backlog: sincroniza el filtro de IPs
+        (`core.ip_filter.ip_filter`, ya recargado con los rangos vigentes)
+        con el propio backend. Por defecto no hace nada: Soulseek, DC++,
+        Gnutella2 y eMule consultan el filtro directamente por IP en cada
+        conexión (saliente en `core.proxy.open_connection`, entrante en su
+        propio manejador), sin necesitar ningún paso de sincronización
+        aparte. Solo lo sobreescribe `TorrentBackend`, porque `libtorrent`
+        gestiona sus propias conexiones con un `lt.ip_filter` nativo que
+        hay que traducir a mano a partir de los mismos rangos."""
+        return
+
     def list_files(self, download: Download) -> Optional[list[dict]]:
         """Lista los archivos de un torrent multi-archivo (índice, ruta,
         tamaño, prioridad y progreso de cada uno). Devuelve `None` si el

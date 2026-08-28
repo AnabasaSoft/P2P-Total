@@ -4564,6 +4564,491 @@ búsqueda/descarga; falta la parte social):
     derecho para conectar" en "Estado actual" para el detalle completo
     de la implementación y su validación).
 
+### Roadmap — segunda ronda (estudiado 2026-08-25)
+
+Con el backlog original (puntos 1-36) completado, a petición del
+usuario ("qué más puntos hay para hacer?" → "sí, propón nuevas ideas
+para una siguiente ronda") se revisó de nuevo el código de los cinco
+backends y de la GUI para localizar huecos reales frente a un cliente
+P2P completo, con la misma regla de orden estricto que el resto del
+backlog: se implementan uno detrás de otro, documentando cada uno al
+completarlo.
+
+37. ✅ Crear nuevos torrents desde una carpeta/archivo local para
+    compartir contenido propio — hoy `backends/torrent_backend.py`
+    solo descarga/siembra torrents ajenos (magnet o `.torrent`
+    existente); no hay forma de generar un `.torrent` nuevo, algo que
+    sí existe ya para las otras cuatro redes (punto 1 del backlog, que
+    sirve directamente el contenido propio sin necesitar un fichero
+    descriptor aparte). `libtorrent` ya trae `create_torrent`/
+    `file_storage` integrados, sin dependencia nueva. Completo (ver
+    "Punto 37 del backlog: crear nuevos torrents desde contenido
+    propio" en "Estado actual" para el detalle completo de la
+    implementación y su validación).
+38. ✅ Límite de ratio/tiempo de siembra en BitTorrent — hoy la siembra
+    tras completar es indefinida; falta poder configurar "dejar de
+    sembrar al alcanzar un ratio de subida/bajada X" o "tras N horas",
+    función estándar en qBittorrent/Transmission. Completo (ver "Punto
+    38 del backlog: límite de ratio/tiempo de siembra en BitTorrent"
+    en "Estado actual" para el detalle completo).
+39. ✅ Filtro de IPs (`ipfilter.dat` estilo aMule/eMule real) — lista de
+    rangos bloqueados (formato Bluetack habitual, anti-spía/
+    fake-peer), aplicable a las conexiones de las cinco redes. Completo
+    (ver "Punto 39 del backlog: filtro de IPs (`ipfilter.dat` estilo
+    aMule/eMule)" en "Estado actual" para el detalle completo).
+40. ✅ Filtrar resultados de búsqueda por tamaño de archivo (mínimo/
+    máximo) — ya existe el filtro por tipo de archivo
+    (`gui/widgets/search_tab.py`), pero no por rango de tamaño, muy
+    usado en clientes reales para descartar archivos falsos o mal
+    nombrados. Completo (ver "Punto 40 del backlog: filtro de
+    resultados de búsqueda por tamaño" en "Estado actual" para el
+    detalle completo).
+41. ✅ Notificación nativa al recibir un mensaje de chat — hoy las
+    notificaciones de bandeja (punto 23) solo cubren descarga
+    completada/fallida, carpeta vigilada (punto 26) y verificación
+    (punto 27); `gui/widgets/chat_tab.py` no dispara ningún aviso
+    cuando llega un mensaje privado y la ventana está minimizada.
+    Completo (ver "Punto 41 del backlog: notificación nativa de
+    mensajes de chat" en "Estado actual" para el detalle completo).
+42. ✅ Gráfica de velocidad en tiempo real en la pestaña Estadísticas —
+    hoy `gui/widgets/stats_tab.py` solo muestra una tabla de histórico
+    diario; los clientes reales muestran además una línea temporal de
+    subida/bajada de los últimos minutos. Se puede hacer con
+    `QPainter` puro, sin añadir dependencia de QtCharts. Completo (ver
+    "Punto 42 del backlog: gráfica de velocidad en tiempo real" en
+    "Estado actual" para el detalle completo).
+
+### Punto 37 del backlog: crear nuevos torrents desde contenido propio
+
+Primer punto de la segunda ronda, implementado en `backends/torrent_backend.py`:
+
+- **`build_torrent_file(source_path, trackers, comment, private,
+  piece_size=0)`**: función de módulo pura salvo por la lectura a
+  disco para hashear cada pieza (sin socket alguno, testeable sin
+  instanciar `TorrentBackend`), construida directamente sobre la API
+  de `libtorrent` ya usada en el resto del proyecto:
+  `lt.file_storage()` + `lt.add_files()` para indexar el archivo o
+  carpeta, `lt.create_torrent()` + `set_priv()`/`set_comment()`/
+  `set_creator()`, `lt.set_piece_hashes()` para el hasheo real, y
+  `lt.bencode(torrent.generate())` para el `.torrent` final.
+  `piece_size=0` deja que `libtorrent` elija el tamaño de pieza según
+  el tamaño total, igual que el cliente de referencia. Nota de
+  comportamiento real de la librería, descubierta al testear: con
+  varios archivos, `libtorrent` intercala archivos `.pad/NNNN` de
+  relleno para alinear piezas en el torrent híbrido v1+v2 que genera
+  por defecto — no es nada que este código decida, así que el test
+  correspondiente comprueba que los archivos reales están presentes
+  sin asumir un `num_files()` exacto.
+- **`TorrentBackend.create_torrent(source_path, dest_torrent_path,
+  trackers, comment, private)`**: hashea en un hilo aparte vía
+  `run_in_daemon_thread` (mismo patrón que la verificación de hash en
+  DC++/G2/eD2k, para no bloquear el event loop con archivos grandes),
+  escribe el `.torrent` resultante en `dest_torrent_path`, y añade el
+  torrent a la sesión con `save_path` en el propio directorio de
+  origen — como los datos ya están en disco (es el contenido que se
+  acaba de hashear), `libtorrent` los reconoce como completos de
+  inmediato y pasa a sembrar sin descargar nada, sin necesitar ningún
+  camino especial de "marcar como ya descargado". `DEFAULT_TRACKERS`
+  pasa de privado (`_DEFAULT_TRACKERS`) a público, reutilizado también
+  por el diálogo de la GUI para preprellenar la lista.
+- `core/download_manager.py` añade `DownloadManager.create_torrent()`,
+  mismo patrón que `download()`: delega en el backend de BitTorrent y
+  persiste el `Download` resultante con `database.insert_download()`.
+
+En la GUI, nuevo diálogo `gui/widgets/create_torrent_dialog.py`
+(`CreateTorrentDialog`): ruta del archivo o carpeta a compartir (con
+botones "Examinar archivo…"/"Examinar carpeta…"), lista de trackers en
+un `QPlainTextEdit` (uno por línea, preprellenada con
+`DEFAULT_TRACKERS`), comentario opcional y casilla de torrent privado
+(sin DHT ni intercambio de peers). Nueva entrada "Crear torrent…" en
+el menú Archivo de `gui/main_window.py`, justo debajo de "Añadir
+.torrent…": tras aceptar el diálogo, pide dónde guardar el `.torrent`
+con `QFileDialog.getSaveFileName()` (nombre por defecto
+`<origen>.torrent`) y llama a `DownloadManager.create_torrent()`,
+añadiendo el resultado a la pestaña Transferencias igual que cualquier
+otra descarga — se ve de inmediato en estado sembrando, sin pasar por
+"descargando".
+
+13 claves nuevas de i18n (`menu_file_create_torrent`,
+`dlg_create_torrent_title`, `dlg_save_torrent_title`,
+`lbl_torrent_source_path`, `acc_torrent_source_path`,
+`btn_browse_file`, `btn_browse_folder`, `lbl_torrent_trackers`,
+`acc_torrent_trackers`, `lbl_torrent_comment`, `acc_torrent_comment`,
+`chk_torrent_private`, `msg_create_torrent_error`) traducidas a mano en
+los 13 idiomas soportados; se reutiliza el filtro
+`dlg_add_torrent_filter` ya existente para el diálogo de guardado, sin
+duplicarlo.
+
+Validado: pytest completo en verde (215 tests, incluyendo cuatro
+nuevos en `tests/test_torrent_backend.py` —
+`test_build_torrent_file_from_single_file` y
+`test_build_torrent_file_from_folder_includes_all_files` (contra una
+carpeta real en `tmp_path`, comprobando nombre/tamaño/privado/
+comentario/trackers del `.torrent` generado),
+`test_build_torrent_file_rejects_empty_folder`, y
+`test_create_torrent_writes_file_and_starts_seeding` (contra una
+`lt.session` real local, sin red, esperando a que
+`handle.status().is_seeding` se ponga a `True`)); comprobación directa
+de que las 13 claves nuevas existen en los 13 idiomas; y dos scripts
+offscreen (`QT_QPA_PLATFORM=offscreen`) que confirman que
+`CreateTorrentDialog` rellena correctamente sus campos y expone
+`source_path`/`trackers`/`comment`/`private` tras aceptar, y que la
+entrada "Crear torrent…" aparece en el menú Archivo de `MainWindow`
+junto a "Añadir .torrent…". La validación con siembra real contra la
+red BitTorrent (comprobar que otros peers pueden descubrir y descargar
+el `.torrent` recién creado) queda, como el resto del proyecto, para
+cuando el usuario la ejercite a mano por su cuenta.
+
+### Punto 38 del backlog: límite de ratio/tiempo de siembra en BitTorrent
+
+Segundo punto de la segunda ronda. Antes de implementar la función en
+sí, se descubrió por el camino un **bug real y previo** (no introducido
+en esta sesión, pero sí en código ya existente de
+`backends/torrent_backend.py`) mientras se investigaba cómo pausar de
+forma fiable un torrent al superar el límite: `libtorrent` marca todo
+torrent recién añadido con el flag `auto_managed` (activo por
+defecto), que hace que el gestor de cola interno de la sesión deshaga
+un `handle.pause()` manual al cabo de 1-2 segundos por su cuenta —
+confirmado con varios scripts de diagnóstico directos contra una
+`lt.session` real y local (sin red): sin quitar `auto_managed` antes,
+`status().paused` volvía a `False` solo, y el torrent seguía
+transfiriendo aunque `Download.state` se hubiera puesto a `PAUSED` en
+el lado Python. Además, `_poll_loop()` pisaba `d.state` de vuelta a
+`DOWNLOADING`/`COMPLETED` en el siguiente tick (cada 1 s) porque
+`LT_STATE_MAP.get(status.state, ...)` se aplicaba sin comprobar antes
+`status.paused` — el enum `status.state` (downloading/seeding/etc.) no
+cambia de valor solo por estar pausado. Esto significa que, hasta este
+punto, pulsar "Pausar" en la GUI sobre una descarga BitTorrent **no
+pausaba realmente la transferencia** aunque lo pareciera visualmente
+durante como mucho un tick.
+
+Arreglo aplicado (los cuatro puntos, todos en
+`backends/torrent_backend.py`):
+
+- `pause_download()`: llama a `handle.unset_flags(lt.torrent_flags.auto_managed)`
+  antes de `handle.pause()`.
+- `resume_download()`: llama a `handle.set_flags(lt.torrent_flags.auto_managed)`
+  antes de `handle.resume()`, para devolver el torrent a la gestión
+  automática normal de la sesión.
+- `reattach_download()`: aplica el mismo `unset_flags(auto_managed)`
+  cuando se reengancha una descarga que estaba en `PAUSED` tras
+  reiniciar la app.
+- `_poll_loop()`: la línea que traduce estado ahora es
+  `d.state = DownloadState.PAUSED if status.paused else LT_STATE_MAP.get(status.state, d.state)`,
+  para que una descarga pausada no recupere sola un estado activo en
+  el siguiente tick.
+
+Con el pausado ya fiable, la función en sí:
+
+- `core/config.py`, `TorrentConfig`: dos campos nuevos,
+  `seed_ratio_limit: float = 0.0` (subido / tamaño total; 0 = sin
+  límite) y `seed_time_limit_minutes: int = 0` (minutos sembrando tras
+  completarse; 0 = sin límite), cargados/guardados igual que el resto
+  de campos de la clase (`asdict()` ya los serializa solo).
+- `TorrentBackend.set_seed_limits(ratio_limit, time_limit_minutes)`:
+  guarda los límites en el propio backend; nuevo método base
+  `NetworkBackend.set_seed_limits()` en `core/backend_base.py` como
+  no-op por defecto (mismo patrón que `set_global_limits`: solo tiene
+  sentido para BitTorrent, que sigue sembrando en segundo plano tras
+  completar, a diferencia del resto de redes). Se aplica nada más
+  conectar y al guardar Preferencias, igual que los límites de
+  velocidad (`gui/connection_manager.py`, método
+  `_apply_speed_limits`) y también en la ruta de CLI
+  (`main.py::cmd_download`).
+- `_poll_loop()`: por cada torrent en estado `finished`/`seeding` y no
+  pausado, calcula `ratio = status.all_time_upload / max(status.total_wanted, 1)`
+  y los minutos transcurridos desde que empezó a sembrar (guardado en
+  `self._seed_started_at[info_hash]`, con `setdefault()` la primera vez
+  que se detecta seeding); si el ratio o el tiempo superan el límite
+  configurado (el que sea distinto de 0), pausa el torrent con el
+  mismo mecanismo ya arreglado de `unset_flags(auto_managed)` +
+  `pause()`. El seguimiento del tiempo se limpia (`pop()`) en cuanto el
+  torrent deja de estar sembrando sin pausa (se pausó, se canceló o
+  volvió a descargar), para no arrastrar un cronómetro obsoleto.
+  `cancel_download()` también limpia la entrada correspondiente.
+- GUI: dos campos nuevos en la pestaña BitTorrent de
+  `gui/widgets/settings_dialog.py` (`_build_torrent_tab`) —
+  `QDoubleSpinBox` para el ratio (0 = "Ilimitado", mismo texto especial
+  que ya usan los campos de resultados máximos) y `QSpinBox` con
+  sufijo `" min"` para el tiempo, siguiendo la misma convención del
+  resto de sufijos de unidad del diálogo (`" s"`, `" kB/s"`: no se
+  traducen, son abreviaturas universales). Dos claves nuevas de i18n
+  (`lbl_seed_ratio_limit`, `lbl_seed_time_limit`) traducidas a mano en
+  los 13 idiomas soportados.
+
+Validado: pytest completo en verde (219 tests, cuatro nuevos en
+`tests/test_torrent_backend.py`) —
+`test_pause_download_stays_paused_across_poll_ticks` (regresión
+directa del bug de `auto_managed`: crea un torrent real, lo pausa, y
+comprueba que sigue pausado más de dos vueltas de `_poll_loop`, y que
+se reanuda correctamente después);
+`test_seed_ratio_limit_auto_pauses_when_exceeded` y
+`test_seed_time_limit_auto_pauses_when_exceeded` (con un `handle`/
+`status` de libtorrent sustituidos por un doble mínimo inyectado
+directamente en `backend._active`, ya que una `lt.session` local sin
+peers reales no puede generar tráfico de subida real de forma
+determinista — comprueban que `_poll_loop` pausa el torrent al superar
+cada límite por separado); y
+`test_seed_limits_disabled_by_default_do_not_pause` (mismo doble, con
+límites a 0 y ratio/tiempo muy por encima de cualquier valor razonable,
+confirmando que no pausa nada mientras los límites están desactivados).
+También validado con tres scripts de diagnóstico manuales por CLI
+contra una `lt.session` real (documentados arriba, en la explicación
+del bug) y un script offscreen (`QT_QPA_PLATFORM=offscreen`) que
+confirma que `SettingsDialog` carga y recoge correctamente los dos
+campos nuevos sin escribir en disco.
+
+### Punto 39 del backlog: filtro de IPs (`ipfilter.dat` estilo aMule/eMule)
+
+Tercer punto de la segunda ronda: lista de rangos de IP bloqueados en
+el formato clásico de Bluetack/PeerGuardian que usan aMule/eMule
+real (`001.002.003.004 - 001.002.005.006 , 023 , descripción`, una
+línea por rango — IP inicial, IP final, nivel de acceso 0-255 y una
+descripción opcional que se ignora), aplicable a las cinco redes.
+
+- **`core/ip_filter.py`** (módulo nuevo, sin dependencia de ninguna
+  red en concreto): clase `IPFilter` con `load(path)` (parsea el
+  fichero con una regex tolerante, ordena los rangos por IP inicial y
+  guarda también la lista de arranques por separado para poder usar
+  `bisect_right` — búsqueda binaria en vez de recorrido lineal por
+  cada IP consultada, asumiendo como el propio aMule que los rangos de
+  una lista Bluetack real no se solapan entre sí; un fichero
+  inexistente o mal formado deja el filtro sin rangos en vez de lanzar
+  excepción, para que un `ipfilter.dat` corrupto no impida conectar),
+  `configure(enabled, level_threshold)`, `is_blocked(ip)` (bloquea si
+  la IP cae en un rango con nivel ≤ el umbral configurado — nivel más
+  bajo = rango más peligroso, mismo criterio que aMule, con 127 como
+  umbral por defecto de fábrica también igual que aMule; un host que
+  no es una IPv4 literal, como un dominio de hub/tracker/servidor,
+  nunca bloquea) y `blocked_ranges()` (rangos en notación de puntos
+  por encima del umbral, listos para volcar a un filtro nativo). Nota
+  de comportamiento real de Python descubierta al testear: desde la
+  3.9.5, `ipaddress.IPv4Address` rechaza octetos con ceros a la
+  izquierda (ambigüedad con notación octal) — no afecta a listas
+  Bluetack reales, que no usan ese relleno, pero sí obligó a corregir
+  los datos de prueba iniciales del test. Instancia única a nivel de
+  módulo (`ip_filter = IPFilter()`), mismo patrón que
+  `core.stats_tracker`, consultada por nombre desde cualquier backend
+  sin pasarla explícitamente. `apply_config(config)` vuelca lo
+  configurado en Preferencias sobre esa instancia global (recarga el
+  fichero si hay uno configurado, ajusta interruptor y umbral), llamado
+  tanto al conectar cada red como al guardar Preferencias — mismo
+  patrón que `core.rate_limiter.apply_global_limits`. Helper
+  `peer_ip_from_writer(writer)` compartido por los cuatro backends
+  "manuales" para no repetir el acceso a
+  `writer.get_extra_info("peername")` cuatro veces.
+- **Salientes**: `core/proxy.open_connection()` — el punto de paso
+  único por el que ya cruzan las conexiones salientes de Soulseek,
+  DC++, Gnutella2 y eMule (directas o vía proxy SOCKS5/HTTP) — rechaza
+  con `ConnectionRefusedError` antes de intentar nada si el host de
+  destino es una IP bloqueada, mismo criterio tanto en conexión directa
+  como a través de proxy.
+- **Entrantes**: cada uno de los cuatro backends "manuales"
+  (`backends/dcpp_backend.py`, `backends/soulseek_backend.py`,
+  `backends/emule_backend.py`, `backends/g2_backend.py`) comprueba la
+  IP del `writer` recién aceptado nada más entrar en su manejador de
+  conexión entrante y cierra inmediatamente si está bloqueada, antes de
+  cualquier negociación de protocolo (incluida la de ofuscación, en el
+  caso de eMule). Deliberadamente **no** se aplicó al listener efímero
+  de callback PUSH de G2 (`on_client_connected`), por ser un listener
+  de un único uso para un peer que nosotros mismos solicitamos vía
+  push, no una conexión entrante arbitraria.
+- **BitTorrent**: no pasa por `core/proxy.py`, así que se traduce a la
+  API nativa de `libtorrent`: `TorrentBackend.reload_ip_filter()`
+  construye un `lt.ip_filter()`, añade una regla por cada rango de
+  `ip_filter.blocked_ranges()` (`add_rule(start, end, flags=1)`, donde
+  `flags=1` marca el rango como bloqueado) y lo aplica a la sesión con
+  `session.set_ip_filter(...)` — llamado nada más crear la `lt.session`
+  en `connect()`. A partir de ahí es la propia librería quien rechaza
+  los peers de esos rangos, sin código Python de por medio en cada
+  conexión.
+- **Config**: campos nuevos a nivel de `Config` (no de ningún
+  `*Config` por red, al ser una función cross-red):
+  `ip_filter_enabled: bool = False`, `ip_filter_path: str = ""`,
+  `ip_filter_level: int = 127`, cargados/guardados en
+  `load_config()`/`save_config()` igual que el resto de campos de
+  primer nivel.
+- **GUI**: pestaña nueva "Filtro de IPs" en
+  `gui/widgets/settings_dialog.py` (`_build_ip_filter_tab`, registrada
+  justo después de la de control remoto): casilla de activación, campo
+  de ruta al fichero con botón "Examinar…" (`QFileDialog.getOpenFileName`),
+  `QSpinBox` de nivel de acceso (0-255) y una nota explicando el
+  formato Bluetack y que se aplica a las cinco redes. Aplicado al
+  conectar (`gui/connection_manager.py::_apply_speed_limits`, que pese
+  al nombre ya agrupa toda la aplicación de ajustes de red al conectar)
+  y al guardar Preferencias, y también en la ruta de CLI
+  (`main.py::cmd_download`). Cinco claves nuevas de i18n
+  (`settings_tab_ip_filter`, `lbl_ip_filter_enabled`,
+  `lbl_ip_filter_path`, `lbl_ip_filter_level`, `lbl_ip_filter_note`)
+  traducidas a mano en los 13 idiomas soportados.
+
+Validado: pytest completo en verde (230 tests, once nuevos) —
+`tests/test_ip_filter.py` (nuevo fichero, nueve tests: parseo de un
+`ipfilter.dat` de ejemplo con líneas basura intercaladas, fichero
+inexistente, IP bloqueada por estar en rango con nivel ≤ umbral, IP no
+bloqueada por nivel > umbral, IP fuera de cualquier rango, filtro
+desactivado, host no-IPv4, y `blocked_ranges()` con y sin filtro
+activo); un test nuevo en `tests/test_proxy.py`
+(`test_open_connection_refuses_ip_blocked_by_filter`, comprobando el
+`ConnectionRefusedError` contra el singleton global real, sin mocks);
+y un test nuevo en `tests/test_torrent_backend.py`
+(`test_connect_applies_ip_filter_rules_to_session`, contra una
+`lt.session` real y local, comprobando `session.get_ip_filter().access(ip)`
+tanto para una IP dentro de un rango bloqueado como para una fuera).
+También validado con un script offscreen (`QT_QPA_PLATFORM=offscreen`)
+que confirma que la nueva pestaña de `SettingsDialog` carga y recoge
+correctamente sus tres campos sin escribir en disco. Queda, como el
+resto de validación de tráfico real del proyecto, para que el usuario
+la ejercite a mano por su cuenta: cargar un `ipfilter.dat` real de
+Bluetack y comprobar en vivo que se rechazan conexiones de rangos
+bloqueados contra alguna de las cinco redes.
+
+### Punto 40 del backlog: filtro de resultados de búsqueda por tamaño
+
+Cuarto punto de la segunda ronda, en `gui/widgets/search_tab.py`: dos
+`QSpinBox` nuevos ("Tamaño mín."/"Tamaño máx.", en MB, 0 = "Ilimitado"
+reutilizando la clave `spin_unlimited_speed` ya existente) en la fila
+de filtros de la pestaña Búsqueda, junto a la lista de redes. Ningún
+protocolo de las cinco redes soporta una consulta de rango de tamaño a
+nivel de servidor (a diferencia del filtro por tipo de archivo, que sí
+se traduce a categoría eD2k nativa en el backend de eMule), así que,
+igual que ya hace el filtro por tipo para el resto de redes, el filtro
+de tamaño se aplica puramente en el lado cliente: `SearchResultsPanel`
+guarda `_min_size_bytes`/`_max_size_bytes` (fijados al lanzar la
+búsqueda, vía `run_search(..., min_size_bytes, max_size_bytes)`, igual
+que ya ocurre con `_file_type`) y `_add_or_merge()` descarta cualquier
+resultado fuera de rango antes de fusionarlo en la tabla, junto a la
+comprobación de tipo ya existente. Dos claves nuevas de i18n
+(`lbl_min_size`, `lbl_max_size`) traducidas a mano en los 13 idiomas
+soportados. Se dejó fuera de forma deliberada la persistencia del
+filtro de tamaño en el historial de búsquedas y en las alertas
+guardadas (`core/saved_search_manager.py`): son datos de sesión de la
+pestaña, no una propiedad de la búsqueda en sí, y extenderlos ahí no
+lo pedía este punto del backlog.
+
+Validado: pytest completo en verde (230 tests, sin cambios de número
+porque no se ha añadido ningún fichero pytest nuevo — igual que el
+resto de lógica de `gui/widgets/search_tab.py`, no tiene suite propia
+por ser puramente de interfaz; se sigue el mismo patrón ya usado para
+`SettingsDialog`/`CreateTorrentDialog` de un script offscreen
+(`QT_QPA_PLATFORM=offscreen`) ad hoc) que instancia `SearchResultsPanel`
+con un `DownloadManager` simulado, lanza `run_search` con un rango
+[10 MB, 100 MB] y confirma que de tres resultados (5 MB, 50 MB, 500 MB)
+solo el de 50 MB pasa a la tabla, y que sin límites configurados
+(0/0) pasan los tres.
+
+### Punto 41 del backlog: notificación nativa de mensajes de chat
+
+Quinto punto de la segunda ronda, reutilizando el mismo icono de
+bandeja de los puntos 22/23/26/27: aviso nativo del sistema al recibir
+un **mensaje privado** de chat (Soulseek o DC++) mientras la ventana
+está minimizada u oculta en la bandeja. Deliberadamente **no** cubre
+los mensajes de sala/hub (`room_message`), para no generar ruido en
+canales concurridos donde el volumen de mensajes es alto y ajeno al
+usuario en la mayoría de los casos — mismo criterio que siguen la
+mayoría de clientes de chat reales, que solo destacan los mensajes
+directos.
+
+- `gui/widgets/chat_tab.py`: nueva señal
+  `ChatTab.private_message_received = pyqtSignal(str, str, str)` (red,
+  remitente, mensaje), emitida en `_on_chat_event()` justo después de
+  añadir el mensaje a la sub-pestaña de conversación privada
+  correspondiente, solo para el tipo de evento `"private_message"`.
+- `gui/main_window.py`: `MainWindow` conecta esa señal a
+  `_on_private_message_for_notifications()`, que muestra el aviso vía
+  `self._tray_icon.showMessage(...)` solo si hay icono de bandeja
+  disponible, la preferencia `config.ui.notify_on_chat_message` está
+  activada, y la ventana **no** está a la vez visible y no minimizada
+  (`self.isVisible() and not self.isMinimized()` → no avisa, porque el
+  propio mensaje ya se ve en la pestaña Chat sin necesidad de aviso
+  aparte) — cubre tanto minimizada (`isMinimized()`) como oculta del
+  todo en la bandeja tras `hide()` (`not isVisible()`), los dos casos
+  reales que puede dejar `changeEvent()`/`closeEvent()` (puntos 22/26).
+- `core/config.py`, `UIConfig`: campo nuevo
+  `notify_on_chat_message: bool = True`, cargado/guardado igual que el
+  resto de campos de la clase (ya cubierto por `asdict()` en
+  `save_config()`).
+- GUI: checkbox nuevo en `gui/widgets/settings_dialog.py`
+  (`_notify_on_chat_check`), justo debajo del ya existente para avisos
+  de descarga completada/fallida. Dos claves nuevas de i18n
+  (`lbl_notify_on_chat`, `notify_chat_message_title` — esta última con
+  marcador `{user}` para el remitente, mismo patrón que
+  `notify_download_completed_body` con `{title}`) traducidas a mano en
+  los 13 idiomas soportados.
+
+Validado: pytest completo en verde (230 tests, sin cambios de número
+por el mismo motivo que el punto 40 — es lógica de interfaz sin suite
+pytest propia); dos scripts offscreen (`QT_QPA_PLATFORM=offscreen`) ad
+hoc: uno instanciando `ChatTab` sola y comprobando que la señal se
+emite para un evento `private_message` con los tres argumentos
+correctos y que **no** se emite para un evento `room_message`; y otro
+instanciando `MainWindow` completa (con `qasync.QEventLoop`, mismo
+patrón que `gui/app.py`) que comprueba, sustituyendo `_tray_icon` por
+un `MagicMock` y `load_config` por un `Config()` de prueba vía
+`unittest.mock.patch`, las tres combinaciones relevantes: ventana
+visible y no minimizada → no avisa; ventana oculta (`hide()`) → sí
+avisa; preferencia desactivada con ventana oculta → no avisa. Un
+tercer script offscreen confirma que `SettingsDialog` carga y recoge
+correctamente el nuevo checkbox sin escribir en disco.
+
+### Punto 42 del backlog: gráfica de velocidad en tiempo real
+
+Sexto y último punto de la segunda ronda: `gui/widgets/stats_tab.py`
+solo mostraba tablas (totales acumulados e histórico diario), sin
+ninguna representación visual de la velocidad instantánea agregada de
+las cinco redes, presente en prácticamente todos los clientes P2P
+reales (qBittorrent, Transmission, aMule...).
+
+- `gui/widgets/speed_graph.py` (nuevo): `SpeedGraphWidget`, un
+  `QWidget` que dibuja la gráfica enteramente con `QPainter` puro en su
+  `paintEvent()` — sin añadir la dependencia de QtCharts, siguiendo el
+  mismo enfoque ya usado en `gui/widgets/delegates.py::
+  ProgressBarDelegate`. Mantiene dos `collections.deque(maxlen=150)`
+  (una de bajada, otra de subida — a una muestra cada 2 s, cubren los
+  últimos 5 minutos) alimentadas por `add_sample(download_bps,
+  upload_bps)`. Al pintar, la muestra más reciente queda siempre
+  pegada al borde derecho del área de la gráfica (`offset = MAX_SAMPLES
+  - len(samples)` en el cálculo de la posición X), de modo que con
+  menos de 150 muestras acumuladas la línea nace desde la derecha en
+  vez de desde la izquierda — mismo efecto de desplazamiento continuo
+  que el gráfico de qBittorrent/Transmission. Dibuja también una
+  rejilla de referencia y una leyenda con la velocidad instantánea
+  actual de bajada/subida (reutilizando `gui.models_qt._format_speed`,
+  ya usado por la columna Velocidad de Transferencias).
+- `gui/widgets/stats_tab.py`: la velocidad instantánea no se mide como
+  tasa ya calculada en ningún backend, así que se deriva en
+  `StatsTab._refresh_speed_graph()` a partir del delta de los mismos
+  totales acumulados que ya alimenta la tabla de totales (persistidos
+  en tiempo real en SQLite por `core.stats_tracker` en cuanto hay
+  tráfico real), dividido por el tiempo real transcurrido entre dos
+  refrescos (`time.monotonic()`, no el intervalo nominal de 2 s del
+  `QTimer`, para no desviarse si algún tick se retrasa). Se optó por
+  este cálculo derivado en la propia GUI en vez de añadir un campo
+  nuevo de tasa instantánea en cada backend, porque los totales por
+  delta ya existían y son la misma fuente de verdad que el resto de la
+  pestaña — evita duplicar plumbing de bajo nivel en las cinco redes
+  para un dato que ya se puede obtener sin tocarlas. La primera llamada
+  (sin línea base previa) no añade ninguna muestra, para no dibujar un
+  pico falso al abrir la pestaña.
+- Clave de i18n nueva `stats_speed_graph_title` ("Velocidad en tiempo
+  real" y equivalentes) traducida a mano en los 13 idiomas soportados.
+
+Validado: pytest completo en verde (230 tests, sin cambios de número —
+es lógica de interfaz sin suite pytest propia, mismo motivo que los
+puntos 40 y 41); script offscreen (`QT_QPA_PLATFORM=offscreen`) ad hoc
+que comprueba, sobre `SpeedGraphWidget` aislado, que `add_sample()`
+respeta el límite de 150 muestras de la ventana deslizante y que
+`paintEvent()` no lanza excepción con 0, 1 y muchas muestras (los tres
+casos límite del bucle de dibujo); y sobre una `StatsTab` real
+construida con un `ConnectionManager` simulado, que el primer refresco
+sin línea base previa no añade ninguna muestra y que un segundo
+refresco con un delta de totales conocido y un tiempo transcurrido
+simulado produce la tasa de bajada/subida exacta esperada.
+
+Con este punto se completa la "segunda ronda de mejoras" del roadmap
+(puntos 37 a 42), todos implementados, probados y documentados en
+orden estricto.
+
 ### Punto 35 del backlog: subpestañas por red en la pestaña Red
 
 Implementado backend por backend según el ámbito fijado al proponer el

@@ -10,7 +10,7 @@ from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtWidgets import (
     QAbstractItemView, QApplication, QCheckBox, QComboBox, QHBoxLayout,
     QHeaderView, QInputDialog, QLabel, QLineEdit, QMenu, QMessageBox, QPushButton,
-    QTabWidget, QVBoxLayout, QWidget,
+    QSpinBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from core.config import Category, load_config
@@ -53,6 +53,8 @@ class SearchResultsPanel(QWidget):
         self._query = ""
         self._networks: list[Network] = []
         self._file_type = "all"
+        self._min_size_bytes = 0
+        self._max_size_bytes = 0
         # Clave (red, título, tamaño) -> fila, para fusionar en la misma
         # fila un fichero encontrado varias veces (varias fuentes del
         # mismo fichero, o el mismo fichero al "seguir buscando"), tanto
@@ -106,10 +108,13 @@ class SearchResultsPanel(QWidget):
         self._table.doubleClicked.connect(lambda _: self._download_selected())
         layout.addWidget(self._table, stretch=1)
 
-    def run_search(self, query: str, networks: list[Network], file_type: str = "all") -> None:
+    def run_search(self, query: str, networks: list[Network], file_type: str = "all",
+                    min_size_bytes: int = 0, max_size_bytes: int = 0) -> None:
         self._query = query
         self._networks = networks
         self._file_type = file_type
+        self._min_size_bytes = min_size_bytes
+        self._max_size_bytes = max_size_bytes
         self._merge_index = {}
         self._model.set_results([])
         self._continue_button.setVisible(False)
@@ -141,6 +146,10 @@ class SearchResultsPanel(QWidget):
         # quedarse con la primera que empiece a transferir datos (ver
         # SoulseekBackend.start_download).
         if not matches_file_type(result.title, self._file_type):
+            return
+        if self._min_size_bytes and result.size_bytes < self._min_size_bytes:
+            return
+        if self._max_size_bytes and result.size_bytes > self._max_size_bytes:
             return
         key = (result.network, result.title, result.size_bytes)
         row = self._merge_index.get(key)
@@ -338,6 +347,20 @@ class SearchTab(QWidget):
             self._network_checks[network] = box
             filter_row.addWidget(box)
         filter_row.addStretch(1)
+        filter_row.addWidget(QLabel(t("lbl_min_size")))
+        self._min_size_spin = QSpinBox()
+        self._min_size_spin.setRange(0, 1_000_000)
+        self._min_size_spin.setSuffix(" MB")
+        self._min_size_spin.setSpecialValueText(t("spin_unlimited_speed"))
+        self._min_size_spin.setAccessibleName(t("lbl_min_size"))
+        filter_row.addWidget(self._min_size_spin)
+        filter_row.addWidget(QLabel(t("lbl_max_size")))
+        self._max_size_spin = QSpinBox()
+        self._max_size_spin.setRange(0, 1_000_000)
+        self._max_size_spin.setSuffix(" MB")
+        self._max_size_spin.setSpecialValueText(t("spin_unlimited_speed"))
+        self._max_size_spin.setAccessibleName(t("lbl_max_size"))
+        filter_row.addWidget(self._max_size_spin)
         layout.addLayout(filter_row)
 
         self._status_label = QLabel("")
@@ -375,13 +398,15 @@ class SearchTab(QWidget):
 
         file_type = self._file_type_combo.currentData()
         self._manager.save_search(query, networks, file_type)
+        min_size_bytes = self._min_size_spin.value() * 1024 * 1024
+        max_size_bytes = self._max_size_spin.value() * 1024 * 1024
 
         panel = SearchResultsPanel(self._manager, self)
         panel.download_requested.connect(self.download_requested.emit)
         index = self._results_tabs.addTab(panel, self._tab_title(query))
         self._results_tabs.setTabToolTip(index, query)
         self._results_tabs.setCurrentIndex(index)
-        panel.run_search(query, networks, file_type)
+        panel.run_search(query, networks, file_type, min_size_bytes, max_size_bytes)
 
     def _on_save_alert_clicked(self) -> None:
         query = self._query_edit.text().strip()

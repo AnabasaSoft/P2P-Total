@@ -30,8 +30,10 @@ from typing import Callable
 
 import libtorrent as lt
 
+from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.http_client import http_get
+from core.ip_filter import ip_filter
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
 from core.stats_tracker import stats_tracker
@@ -54,7 +56,10 @@ _APIBAY_SEARCH_URL = "https://apibay.org/q.php"
 # Trackers públicos habituales para adjuntar a cada magnet construido a
 # partir de un resultado de apibay.org (que solo da el infohash, sin
 # trackers propios) — misma lista que trae el script de referencia.
-_DEFAULT_TRACKERS = (
+# Pública (no con guion bajo): la reutiliza también
+# `gui/widgets/create_torrent_dialog.py` (punto 37 del backlog) para
+# preprellenar la lista de trackers al crear un `.torrent` nuevo.
+DEFAULT_TRACKERS = (
     "udp://tracker.opentrackr.org:1337/announce",
     "udp://open.stealth.si:80/announce",
     "udp://tracker.torrent.eu.org:451/announce",
@@ -76,7 +81,7 @@ def _build_magnet(info_hash: str, name: str) -> str:
     peers que ya están anunciados en la DHT/esos trackers sin depender
     del propio apibay.org para nada más."""
     magnet = f"magnet:?xt=urn:btih:{info_hash}&dn={urllib.parse.quote(name)}"
-    for tracker in _DEFAULT_TRACKERS:
+    for tracker in DEFAULT_TRACKERS:
         magnet += f"&tr={urllib.parse.quote(tracker)}"
     return magnet
 
@@ -167,6 +172,37 @@ def _infohash_from_magnet(magnet: str) -> str | None:
     return m.group(1).lower() if m else None
 
 
+def build_torrent_file(
+    source_path: str,
+    trackers: list[str] | None = None,
+    comment: str = "",
+    private: bool = False,
+    piece_size: int = 0,
+) -> bytes:
+    """Genera el contenido bencoded de un `.torrent` nuevo a partir de un
+    archivo o carpeta local (punto 37 del backlog): compartir contenido
+    propio en BitTorrent, algo que ya existía para las otras cuatro redes
+    (punto 1) pero que aquí requiere generar antes un fichero descriptor.
+    Sin socket alguno -solo lectura a disco para hashear cada pieza-, así
+    que es directamente testeable como el resto de parsers/codecs del
+    proyecto, sin instanciar `TorrentBackend`. `piece_size=0` deja que
+    libtorrent elija el tamaño de pieza automáticamente según el tamaño
+    total, igual que hace el propio cliente de referencia."""
+    fs = lt.file_storage()
+    lt.add_files(fs, source_path)
+    if fs.num_files() == 0:
+        raise ValueError(f"'{source_path}' no contiene ningún archivo")
+    torrent = lt.create_torrent(fs, piece_size)
+    for tracker in trackers or []:
+        torrent.add_tracker(tracker)
+    if comment:
+        torrent.set_comment(comment)
+    torrent.set_creator("P2P Total")
+    torrent.set_priv(private)
+    lt.set_piece_hashes(torrent, os.path.dirname(os.path.abspath(source_path)))
+    return lt.bencode(torrent.generate())
+
+
 class TorrentBackend(NetworkBackend):
     network = Network.TORRENT
 
@@ -178,6 +214,9 @@ class TorrentBackend(NetworkBackend):
         self._pending: dict[str, "lt.torrent_handle"] = {}  # info_hash -> handle encontrado en search(), aún no convertido en descarga
         self._poll_task: asyncio.Task | None = None
         self._last_session_upload_bytes = 0  # para sumar solo el delta al stats_tracker (punto 24)
+        self._seed_ratio_limit = 0.0        # punto 38: 0 = sin límite
+        self._seed_time_limit_minutes = 0   # punto 38: 0 = sin límite
+        self._seed_started_at: dict[str, float] = {}  # info_hash -> momento en que empezó a sembrar
 
     # ---- ciclo de vida ----
 
@@ -232,6 +271,7 @@ class TorrentBackend(NetworkBackend):
                 "force_proxy": True,
             })
         self._session = lt.session(settings)
+        self.reload_ip_filter()
         self._poll_task = asyncio.create_task(self._poll_loop())
 
     async def disconnect(self) -> None:
@@ -398,6 +438,50 @@ class TorrentBackend(NetworkBackend):
         self._active[info_hash] = {"handle": handle, "download": download}
         return download
 
+    async def create_torrent(
+        self,
+        source_path: str,
+        dest_torrent_path: str,
+        trackers: list[str] | None = None,
+        comment: str = "",
+        private: bool = False,
+    ) -> Download:
+        """Punto 37 del backlog: genera un `.torrent` nuevo a partir de
+        `source_path` (archivo o carpeta local), lo guarda en
+        `dest_torrent_path` y lo añade a la sesión con `save_path` en el
+        propio directorio de origen -- las piezas ya están en disco (es
+        el contenido que se acaba de hashear), así que libtorrent las
+        reconoce como completas de inmediato y pasa a sembrar sin
+        descargar nada. El hasheo se hace en un hilo aparte para no
+        bloquear el event loop con archivos grandes (mismo patrón que la
+        verificación de hash en DC++/G2/eD2k)."""
+        if self._session is None:
+            raise RuntimeError("Backend de torrent no conectado")
+
+        data = await run_in_daemon_thread(
+            build_torrent_file, source_path, trackers, comment, private,
+            name="create-torrent",
+        )
+        with open(dest_torrent_path, "wb") as f:
+            f.write(data)
+
+        info = lt.torrent_info(lt.bdecode(data))
+        save_path = os.path.dirname(os.path.abspath(source_path))
+        handle = self._session.add_torrent({"ti": info, "save_path": save_path})
+        info_hash = str(handle.info_hash())
+
+        download = Download(
+            id=None,
+            network=self.network,
+            title=info.name(),
+            source_id=_FILE_PREFIX + dest_torrent_path,
+            dest_path=save_path,
+            size_bytes=info.total_size(),
+            state=DownloadState.SEARCHING_SOURCES,
+        )
+        self._active[info_hash] = {"handle": handle, "download": download}
+        return download
+
     async def reattach_download(self, download: Download) -> None:
         """Reengancha un torrent tras reiniciar la app: la sesión de
         libtorrent se crea desde cero en cada `connect()`, así que hay
@@ -420,6 +504,11 @@ class TorrentBackend(NetworkBackend):
             handle = self._session.add_torrent(params)
 
         if download.state == DownloadState.PAUSED:
+            # libtorrent reactiva un torrent pausado casi de inmediato por su
+            # cuenta si el flag auto_managed sigue puesto (su gestor interno
+            # de cola lo entiende como "listo para retomar") -hay que
+            # quitárselo primero para que el pause() se quede como está.
+            handle.unset_flags(lt.torrent_flags.auto_managed)
             handle.pause()
         else:
             handle.resume()
@@ -429,14 +518,20 @@ class TorrentBackend(NetworkBackend):
         self._active[info_hash] = {"handle": handle, "download": download}
 
     async def pause_download(self, download: Download) -> None:
+        """`auto_managed` (activo por defecto al añadir el torrent) hace que
+        el gestor de cola de libtorrent deshaga un pause() manual al cabo de
+        1-2 segundos si no se desactiva antes -sin esto, el torrent seguía
+        transfiriendo aunque la GUI lo mostrara como pausado."""
         entry = self._find_entry(download)
         if entry:
+            entry["handle"].unset_flags(lt.torrent_flags.auto_managed)
             entry["handle"].pause()
             download.state = DownloadState.PAUSED
 
     async def resume_download(self, download: Download) -> None:
         entry = self._find_entry(download)
         if entry:
+            entry["handle"].set_flags(lt.torrent_flags.auto_managed)
             entry["handle"].resume()
             download.state = DownloadState.DOWNLOADING
 
@@ -451,7 +546,9 @@ class TorrentBackend(NetworkBackend):
         entry = self._find_entry(download)
         if entry and self._session:
             self._session.remove_torrent(entry["handle"])
-            del self._active[str(entry["handle"].info_hash())]
+            info_hash = str(entry["handle"].info_hash())
+            del self._active[info_hash]
+            self._seed_started_at.pop(info_hash, None)
             download.state = DownloadState.CANCELLED
 
     def set_global_limits(self, download_bps: int, upload_bps: int) -> None:
@@ -475,6 +572,24 @@ class TorrentBackend(NetworkBackend):
         if entry:
             entry["handle"].set_download_limit(rate_bps)
             entry["handle"].set_upload_limit(rate_bps)
+
+    def set_seed_limits(self, ratio_limit: float, time_limit_minutes: int) -> None:
+        self._seed_ratio_limit = ratio_limit
+        self._seed_time_limit_minutes = time_limit_minutes
+
+    def reload_ip_filter(self) -> None:
+        """Traduce los rangos ya cargados en `core.ip_filter.ip_filter` a
+        un `lt.ip_filter` nativo: a diferencia de las otras cuatro redes,
+        que consultan el filtro por IP en cada conexión, libtorrent
+        gestiona sus propias conexiones internamente y necesita su propia
+        copia del filtro, con formato "flags" en vez de un booleano
+        (1 = bloqueado, ver `lt.ip_filter.add_rule`)."""
+        if self._session is None:
+            return
+        lt_filter = lt.ip_filter()
+        for start, end in ip_filter.blocked_ranges():
+            lt_filter.add_rule(start, end, 1)
+        self._session.set_ip_filter(lt_filter)
 
     def supports_verify(self) -> bool:
         return True
@@ -636,14 +751,38 @@ class TorrentBackend(NetworkBackend):
         }
         try:
             while True:
-                for entry in list(self._active.values()):
-                    status = entry["handle"].status()
+                for info_hash, entry in list(self._active.items()):
+                    handle = entry["handle"]
+                    status = handle.status()
                     d = entry["download"]
                     d.downloaded_bytes = status.total_wanted_done
                     d.size_bytes = status.total_wanted or d.size_bytes
                     d.speed_bps = status.download_rate
                     d.connected_peers = status.num_peers
-                    d.state = LT_STATE_MAP.get(status.state, d.state)
+                    # `status.paused` no cambia `status.state`: sin este
+                    # chequeo, un torrent recién pausado por el usuario (o
+                    # por el límite de siembra de más abajo) recuperaba en
+                    # el siguiente tick el estado DOWNLOADING/COMPLETED que
+                    # ya tenía libtorrent, deshaciendo visualmente el pause.
+                    d.state = DownloadState.PAUSED if status.paused else LT_STATE_MAP.get(status.state, d.state)
+
+                    is_seeding = status.state in (
+                        lt.torrent_status.states.finished,
+                        lt.torrent_status.states.seeding,
+                    )
+                    if is_seeding and not status.paused:
+                        started_at = self._seed_started_at.setdefault(info_hash, time.time())
+                        ratio = status.all_time_upload / max(status.total_wanted, 1)
+                        elapsed_minutes = (time.time() - started_at) / 60
+                        ratio_hit = self._seed_ratio_limit > 0 and ratio >= self._seed_ratio_limit
+                        time_hit = self._seed_time_limit_minutes > 0 and elapsed_minutes >= self._seed_time_limit_minutes
+                        if ratio_hit or time_hit:
+                            handle.unset_flags(lt.torrent_flags.auto_managed)
+                            handle.pause()
+                            d.state = DownloadState.PAUSED
+                    else:
+                        self._seed_started_at.pop(info_hash, None)
+
                     if not status.paused and self._progress_callback:
                         self._progress_callback(d)
 

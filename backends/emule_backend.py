@@ -72,6 +72,7 @@ from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.config import _config_dir
 from core.http_client import http_get
+from core.ip_filter import ip_filter, peer_ip_from_writer as _peer_ip_from_writer
 from core.md4 import md4
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
@@ -1869,6 +1870,14 @@ class EMuleBackend(NetworkBackend):
         pasan a ser el stream ya descifrado de forma transparente; con
         obfuscation="required" se rechaza cualquier conexión que no
         venga ofuscada)."""
+        # Punto 39 del backlog: se comprueba antes de nada, incluso antes
+        # de intentar negociar ofuscación -el camino saliente ya pasa por
+        # el mismo filtro dentro de `core.proxy.open_connection`.
+        peer_ip = _peer_ip_from_writer(writer)
+        if peer_ip and ip_filter.is_blocked(peer_ip):
+            writer.close()
+            return
+
         peer_reader, peer_writer, first_byte = reader, writer, None
         try:
             if self._obfuscation != "disabled":

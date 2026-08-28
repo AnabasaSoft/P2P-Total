@@ -5,6 +5,8 @@ solo muestra el estado instantáneo de la conexión en curso y se pierde
 al reconectar (ver `core.stats_tracker`, que es quien persiste estos
 totales en SQLite)."""
 
+import time
+
 from PyQt6.QtCore import QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
@@ -16,6 +18,7 @@ from gui.connection_manager import ConnectionManager
 from gui.i18n import t
 from gui.models_qt import NETWORK_LABEL_KEYS
 from gui.theme import NETWORK_COLORS
+from gui.widgets.speed_graph import SpeedGraphWidget
 
 _POLL_INTERVAL_MS = 2000
 _HISTORY_DAYS = 30
@@ -51,6 +54,12 @@ class StatsTab(QWidget):
         self._manager = connection_manager
 
         layout = QVBoxLayout(self)
+
+        layout.addWidget(QLabel(t("stats_speed_graph_title")))
+        self._speed_graph = SpeedGraphWidget()
+        layout.addWidget(self._speed_graph)
+        self._last_totals: tuple[int, int] | None = None
+        self._last_sample_time: float | None = None
 
         layout.addWidget(QLabel(t("stats_totals_title")))
         self._totals_table = QTableWidget(len(Network), 5)
@@ -105,6 +114,8 @@ class StatsTab(QWidget):
             stats_tracker.flush_connected_time(network)
 
         stats = database.get_all_network_stats()
+        total_downloaded = 0
+        total_uploaded = 0
         for network, row in self._rows.items():
             entry = stats.get(network.value, {})
             downloaded = entry.get("total_downloaded_bytes", 0)
@@ -115,8 +126,31 @@ class StatsTab(QWidget):
             self._totals_table.item(row, self.COL_DOWNLOADED).setText(_format_bytes(downloaded))
             self._totals_table.item(row, self.COL_RATIO).setText(f"{ratio:.2f}")
             self._totals_table.item(row, self.COL_CONNECTED_TIME).setText(_format_duration(connected_seconds))
+            total_downloaded += downloaded
+            total_uploaded += uploaded
 
+        self._refresh_speed_graph(total_downloaded, total_uploaded)
         self._refresh_history()
+
+    def _refresh_speed_graph(self, total_downloaded: int, total_uploaded: int) -> None:
+        # Punto 42 del backlog: la velocidad instantánea no se mide en
+        # ningún backend como una tasa ya calculada -se deriva aquí del
+        # delta de los totales acumulados (los mismos que alimentan la
+        # tabla de arriba, actualizados en tiempo real por
+        # `core.stats_tracker` en cuanto hay tráfico real) entre este
+        # refresco y el anterior, dividido por el tiempo real
+        # transcurrido (no el intervalo nominal del QTimer, para no
+        # desviarse si algún tick se retrasa).
+        now = time.monotonic()
+        if self._last_totals is not None and self._last_sample_time is not None:
+            elapsed = now - self._last_sample_time
+            if elapsed > 0:
+                prev_downloaded, prev_uploaded = self._last_totals
+                download_bps = (total_downloaded - prev_downloaded) / elapsed
+                upload_bps = (total_uploaded - prev_uploaded) / elapsed
+                self._speed_graph.add_sample(download_bps, upload_bps)
+        self._last_totals = (total_downloaded, total_uploaded)
+        self._last_sample_time = now
 
     def _refresh_history(self) -> None:
         rows = database.get_network_stats_daily(_HISTORY_DAYS)

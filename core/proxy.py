@@ -26,6 +26,8 @@ import socket
 import struct
 from dataclasses import dataclass
 
+from core.ip_filter import ip_filter
+
 
 @dataclass
 class ProxyConfig:
@@ -43,7 +45,15 @@ async def open_connection(host: str, port: int, *, proxy: "ProxyConfig | None" =
     si `proxy` está configurado y activo, la conexión al destino se
     establece a través de él; si no, se conecta directamente igual que
     antes. Pensado para reemplazar uno a uno los `asyncio.open_connection`
-    salientes ya existentes en cada backend sin cambiar su forma de uso."""
+    salientes ya existentes en cada backend sin cambiar su forma de uso.
+
+    Punto 39 del backlog: si `host` es una IP bloqueada por el filtro
+    configurado (`core.ip_filter.ip_filter`), la conexión se rechaza antes
+    de intentar nada -mismo criterio tanto si va directa como a través de
+    proxy. Los hosts que no son una IPv4 literal (dominios de hub/tracker/
+    servidor) nunca coinciden con ningún rango, así que pasan de largo."""
+    if ip_filter.is_blocked(host):
+        raise ConnectionRefusedError(f"IP bloqueada por el filtro de IPs: {host}")
     if proxy is None or not proxy.enabled or not proxy.host:
         coro = asyncio.open_connection(host, port, ssl=ssl)
     elif proxy.kind == "socks5":
