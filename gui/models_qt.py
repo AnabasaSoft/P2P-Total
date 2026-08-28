@@ -178,6 +178,9 @@ class DownloadsModel(QAbstractTableModel):
                 index = self.index(row, self.COL_STATE)
                 self.dataChanged.emit(index, index, [Qt.ItemDataRole.DisplayRole])
 
+    def is_network_connected(self, network: Network) -> bool:
+        return self._connected.get(network, False)
+
     def set_downloads(self, downloads: list[Download]) -> None:
         self.beginResetModel()
         self._downloads = downloads

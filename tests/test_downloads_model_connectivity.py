@@ -67,3 +67,12 @@ def test_other_networks_are_unaffected():
     model.set_network_connected(Network.TORRENT, True)
 
     assert model.data(index) == "Sin conectar"
+
+
+def test_is_network_connected_defaults_to_false():
+    model = DownloadsModel()
+
+    assert model.is_network_connected(Network.TORRENT) is False
+
+    model.set_network_connected(Network.TORRENT, True)
+    assert model.is_network_connected(Network.TORRENT) is True

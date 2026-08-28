@@ -6445,3 +6445,58 @@ estado real al conectar, volver a "Sin conectar" al desconectar de
 nuevo, dejar intactos los estados independientes de la conexión, y que
 el cambio de una red no afecte a las descargas de otra. Suite completa
 de pytest en verde: 250/250.
+
+### Arreglo: el botón "Pausar" del menú contextual desaparecía justo al arrancar la descarga de verdad
+
+Bug real reportado por el usuario, tras el arreglo anterior: "sigue sin
+salir pausa/continuar en el menú contextual! nada más arrancar, sin
+conectar, botón contextual muestra botón pausa, una vez iniciada la
+descarga desaparece el botón pausa del menú contextual". Dos causas
+distintas, ambas en la misma zona:
+
+1. El menú contextual solo ofrecía "Pausar" cuando `d.state ==
+   DownloadState.DOWNLOADING`. Al reconectar una red, una descarga
+   activa reenganchada (`TorrentBackend.reattach_download`) pasa antes
+   por `SEARCHING_SOURCES` (metadatos/recomprobación de piezas ya en
+   disco -en torrents grandes, un tramo nada instantáneo-) antes de
+   llegar a `DOWNLOADING`: durante ese tramo, "Pausar" desaparecía del
+   menú sin ningún motivo real, ya que pausar tiene sentido en
+   cualquiera de los estados "activos" (`QUEUED`, `SEARCHING_SOURCES`,
+   `DOWNLOADING`), no solo mientras ya hay bytes bajando. Se amplió la
+   condición en `gui/widgets/downloads_tab.py` (menú contextual,
+   `pause_all()` y la ejecución de la acción) a esos tres estados,
+   reunidos en la constante `_PAUSABLE_STATES`.
+
+2. Más grave: `DownloadManager.pause`/`resume`/`cancel` pedían el
+   backend al `BackendRegistry` sin comprobar si era `None` -a
+   diferencia de `restart`, que sí lo comprobaba desde antes-, así que
+   pulsar Pausar/Reanudar sobre una descarga cuya red no está conectada
+   (el caso "nada más arrancar, sin conectar" del propio reporte)
+   acababa llamando a un método sobre `None`; como esas llamadas van
+   siempre envueltas en `asyncio.ensure_future()`, ese `AttributeError`
+   no se veía en ningún sitio salvo un aviso de consola de "Task
+   exception was never retrieved" -el botón parecía "no hacer nada".
+   Se añadió el mismo `RuntimeError` explícito que ya lanzaba
+   `restart`, y además el menú ahora deja de ofrecer "Pausar"/
+   "Reanudar" en cuanto a la descarga cuya red no está conectada
+   (reutilizando `DownloadsModel.is_network_connected()`, ya
+   introducido para el arreglo anterior), para no llegar a ofrecer una
+   acción condenada a fallar.
+
+Se investigó también, con un test end-to-end nuevo contra una sesión
+de libtorrent real
+(`tests/test_torrent_reattach_gui_sync.py`), si el objeto `Download`
+que ve la GUI (cargado en `DownloadsTab.__init__` vía
+`load_history()`) y el que usa `TorrentBackend` tras reenganchar
+(cargado por separado en `reattach_active_downloads()`, un objeto
+Python distinto aunque comparta `id`) podían desincronizarse
+permanentemente -confirmando que no: `DownloadsModel.update_download()`
+los reconcilia por `id` en cuanto llega la primera notificación de
+`_poll_loop` tras el reenganche, así que ese no era el origen del
+problema.
+
+Validado con `tests/test_download_manager_offline_actions.py`
+(pause/resume/cancel lanzan `RuntimeError` sin backend registrado),
+la ampliación de `tests/test_downloads_model_connectivity.py`
+(`is_network_connected`), y el test end-to-end de reenganche ya
+mencionado. Suite completa de pytest en verde: 255/255.

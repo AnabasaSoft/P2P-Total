@@ -207,15 +207,27 @@ class DownloadManager:
                 pass
 
     async def pause(self, download: Download) -> None:
+        # Bug real reportado por el usuario: pulsar "Pausar" en una
+        # descarga cuya red no está conectada no hacía nada visible -sin
+        # este guardián, `backend` es `None` y `None.pause_download(...)`
+        # lanzaba un `AttributeError` que `asyncio.ensure_future` se
+        # limitaba a tragarse en silencio (solo un aviso por consola de
+        # "Task exception was never retrieved").
         backend = BackendRegistry.get(download.network)
+        if backend is None:
+            raise RuntimeError(f"La red {download.network.value} no está conectada")
         await backend.pause_download(download)
 
     async def resume(self, download: Download) -> None:
         backend = BackendRegistry.get(download.network)
+        if backend is None:
+            raise RuntimeError(f"La red {download.network.value} no está conectada")
         await backend.resume_download(download)
 
     async def cancel(self, download: Download) -> None:
         backend = BackendRegistry.get(download.network)
+        if backend is None:
+            raise RuntimeError(f"La red {download.network.value} no está conectada")
         await backend.cancel_download(download)
 
     async def restart(self, download: Download, from_scratch: bool = False) -> None:

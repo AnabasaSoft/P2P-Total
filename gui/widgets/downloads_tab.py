@@ -21,6 +21,17 @@ from gui.widgets.accessible_table import AccessibleTableView
 from gui.widgets.delegates import ProgressBarDelegate
 from gui.widgets.torrent_files_dialog import TorrentFilesDialog
 
+# Bug real reportado por el usuario: nada más arrancar (o al reconectar
+# una red), una descarga persistida como DOWNLOADING mostraba bien
+# "Pausar" en el menú contextual, pero en cuanto arrancaba de verdad
+# pasaba brevemente (o, con torrents grandes que necesitan recomprobar
+# muchos datos ya en disco, no tan brevemente) por QUEUED/
+# SEARCHING_SOURCES antes de llegar a DOWNLOADING -y durante ese tramo
+# "Pausar" desaparecía del menú sin motivo real: pausar tiene sentido
+# en cualquiera de estos tres estados "activos", no solo mientras ya
+# hay bytes bajando.
+_PAUSABLE_STATES = (DownloadState.QUEUED, DownloadState.SEARCHING_SOURCES, DownloadState.DOWNLOADING)
+
 
 class DownloadsTab(QWidget):
     def __init__(
@@ -85,12 +96,12 @@ class DownloadsTab(QWidget):
 
     def pause_all(self) -> None:
         for download in self._model.downloads_in_order():
-            if download.state == DownloadState.DOWNLOADING:
+            if download.state in _PAUSABLE_STATES and self._model.is_network_connected(download.network):
                 asyncio.ensure_future(self._manager.pause(download))
 
     def resume_all(self) -> None:
         for download in self._model.downloads_in_order():
-            if download.state == DownloadState.PAUSED:
+            if download.state == DownloadState.PAUSED and self._model.is_network_connected(download.network):
                 asyncio.ensure_future(self._manager.resume(download))
 
     def active_speed_bps(self) -> float:
@@ -130,9 +141,13 @@ class DownloadsTab(QWidget):
         open_folder_action = speed_limit_action = torrent_files_action = None
         move_up_action = move_down_action = verify_action = None
         if downloads:
-            if any(d.state == DownloadState.DOWNLOADING for d in downloads):
+            if any(
+                d.state in _PAUSABLE_STATES and self._model.is_network_connected(d.network) for d in downloads
+            ):
                 pause_action = menu.addAction(t("ctx_pause"))
-            if any(d.state == DownloadState.PAUSED for d in downloads):
+            if any(
+                d.state == DownloadState.PAUSED and self._model.is_network_connected(d.network) for d in downloads
+            ):
                 resume_action = menu.addAction(t("ctx_resume"))
             if any(d.state not in (DownloadState.COMPLETED, DownloadState.CANCELLED) for d in downloads):
                 cancel_action = menu.addAction(t("ctx_cancel"))
@@ -173,11 +188,11 @@ class DownloadsTab(QWidget):
             return
         if action == pause_action:
             for download in downloads:
-                if download.state == DownloadState.DOWNLOADING:
+                if download.state in _PAUSABLE_STATES and self._model.is_network_connected(download.network):
                     asyncio.ensure_future(self._manager.pause(download))
         elif action == resume_action:
             for download in downloads:
-                if download.state == DownloadState.PAUSED:
+                if download.state == DownloadState.PAUSED and self._model.is_network_connected(download.network):
                     asyncio.ensure_future(self._manager.resume(download))
         elif action == cancel_action:
             cancellable = [d for d in downloads if d.state not in (DownloadState.COMPLETED, DownloadState.CANCELLED)]
