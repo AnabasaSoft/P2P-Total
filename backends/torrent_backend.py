@@ -845,12 +845,25 @@ class TorrentBackend(NetworkBackend):
                     d.size_bytes = status.total_wanted or d.size_bytes
                     d.speed_bps = status.download_rate
                     d.connected_peers = status.num_peers
-                    # `status.paused` no cambia `status.state`: sin este
-                    # chequeo, un torrent recién pausado por el usuario (o
-                    # por el límite de siembra de más abajo) recuperaba en
-                    # el siguiente tick el estado DOWNLOADING/COMPLETED que
-                    # ya tenía libtorrent, deshaciendo visualmente el pause.
-                    d.state = DownloadState.PAUSED if status.paused else LT_STATE_MAP.get(status.state, d.state)
+                    # Bug real reportado por el usuario: un error de disco de
+                    # verdad (cuota de usuario excedida, permisos, disco
+                    # lleno...) nunca se veía en la GUI -libtorrent se
+                    # limita a marcar `status.paused = True` y dejar de
+                    # avanzar, indistinguible a simple vista de una pausa
+                    # normal del usuario o del límite de siembra de más
+                    # abajo. `status.errc` es el error real que libtorrent
+                    # trae para ese caso (vacío si no hay ningún error), así
+                    # que tiene prioridad sobre el resto de estados.
+                    if status.errc.value() != 0:
+                        d.state = DownloadState.ERROR
+                        d.error_message = status.errc.message()
+                    else:
+                        # `status.paused` no cambia `status.state`: sin este
+                        # chequeo, un torrent recién pausado por el usuario (o
+                        # por el límite de siembra de más abajo) recuperaba en
+                        # el siguiente tick el estado DOWNLOADING/COMPLETED que
+                        # ya tenía libtorrent, deshaciendo visualmente el pause.
+                        d.state = DownloadState.PAUSED if status.paused else LT_STATE_MAP.get(status.state, d.state)
 
                     is_seeding = status.state in (
                         lt.torrent_status.states.finished,
@@ -869,7 +882,11 @@ class TorrentBackend(NetworkBackend):
                     else:
                         self._seed_started_at.pop(info_hash, None)
 
-                    if not status.paused and self._progress_callback:
+                    # También se notifica en pausa cuando la pausa la ha
+                    # causado un error real (ver arriba): si no, la GUI se
+                    # queda con el último estado bueno hasta el próximo
+                    # cambio, y el error nunca llega a verse.
+                    if (not status.paused or d.state == DownloadState.ERROR) and self._progress_callback:
                         self._progress_callback(d)
 
                 # Bytes subidos totales de la sesión (punto 24 del backlog):

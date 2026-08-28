@@ -339,6 +339,7 @@ class _FakeStatus:
         self.num_peers = 0
         self.paused = paused
         self.state = state
+        self.errc = lt.error_code()
 
 
 class _FakeHandle:

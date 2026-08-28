@@ -6186,3 +6186,85 @@ llamada y también se repone después; y que `open_url()`/
 `open_local_path()` llaman a `QDesktopServices.openUrl()` con la
 `QUrl`/ruta local esperada. Suite completa de pytest sin cambios (236
 en verde), al no tocar ninguna lógica de red.
+
+### Arreglo: una descarga de torrent con un error real de disco se quedaba congelada en "Buscando..." sin ningún aviso
+
+Bug real reportado por el usuario, con capturas: dos descargas de
+BitTorrent (un ISO de openSUSE y un pack de libros) se quedaban
+indefinidamente al 0% en estado "Buscando...", con 0 pares por
+descarga en Transferencias pese a que la pestaña Red mostraba 17 pares
+conectados a nivel de sesión — y la tabla de Trackers activos marcaba
+las 5 entradas de ambos torrents como "con errores".
+
+Investigación: se descartó primero que fuera una regresión del arreglo
+anterior de selección de archivos (una de las dos descargas atascadas
+usaba un magnet de un solo fichero, sin selección de archivos de por
+medio, y aun así estaba igual de atascada) y también una caída general
+de red/trackers/DHT (una descarga nueva del mismo magnet, hecha desde
+cero por CLI, funcionó perfectamente y alcanzó varios MB/s en
+segundos). Revisando `_poll_loop()` en `backends/torrent_backend.py`
+se encontró que era el único de los cinco backends que nunca ponía
+`DownloadState.ERROR`/`error_message` ante ningún fallo real — los
+otros cuatro (DC++, Gnutella2, Soulseek, eMule) sí lo hacen ante sus
+propios fallos de transferencia. libtorrent, cuando falla de verdad al
+leer/escribir en disco (permisos, disco lleno, cuota de usuario
+excedida en sistemas con qgroups de btrfs como el `/home` de este
+equipo, que usa btrfs con subvolúmenes gestionados por snapper),
+simplemente pone `status.paused = True` y dejar de avanzar —
+indistinguible a simple vista de una pausa normal del usuario o del
+propio auto-pausado por límite de ratio/tiempo de siembra que ya
+implementaba el backend. El error real que trae libtorrent para ese
+caso, `status.errc` (vacío si no hay error), nunca se consultaba. Esto
+dejaba cualquier error de disco real completamente invisible para el
+usuario, que solo veía un atasco sin explicación — coincide con lo
+descrito en el reporte. (Nota: `df -h` en este equipo mostró de sobra
+espacio libre tanto en `/` como en `/home`, pero eso no descarta un
+límite de qgroup de btrfs, que es independiente del espacio libre
+bruto y que requiere privilegios de root para consultar con `btrfs
+qgroup show -r` — no se pudo confirmar ni descartar del todo esa
+hipótesis concreta sin acceso root.)
+
+Se añadió en `_poll_loop()` la lectura de `status.errc`: si trae un
+error (`.value() != 0`), se pone `DownloadState.ERROR` y
+`error_message = status.errc.message()`, con prioridad sobre el resto
+de estados; si no, se mantiene la lógica anterior (`PAUSED` si
+`status.paused`, si no el estado que traiga libtorrent). También se
+ajustó la condición que decide si se notifica el cambio a la GUI para
+que dispare igualmente cuando la pausa la ha causado un error real (si
+no, la tabla se quedaba con el último estado bueno hasta el siguiente
+cambio y el error nunca llegaba a verse). La etiqueta "Error" en la
+columna Estado ya existía en `gui/i18n.py` para el resto de redes, así
+que no hizo falta ningún cambio de GUI ni de traducciones.
+
+Validado con un test nuevo,
+`tests/test_torrent_disk_error.py`, que crea contenido real, genera su
+`.torrent`, añade esa misma descarga apuntando a un directorio sin
+permiso de escritura (`chmod 0o555`) y fuerza la escritura de la
+primera pieza con `handle.add_piece()` para provocar un fallo de
+disco real y determinista sin depender de temporización de red (un
+primer intento con dos sesiones locales reales intercambiando la pieza
+por loopback funcionaba pero resultó intermitente según cuándo
+terminaba el *handshake* del peer, así que se descartó en favor de
+`add_piece()`, que escribe a disco directamente) — confirma que
+`download.state` pasa a `DownloadState.ERROR` con un `error_message`
+no vacío. Se repitió 5 veces seguidas sin fallos para confirmar que ya
+no es intermitente. De paso, los dos tests ya existentes de
+auto-pausado por límite de ratio/tiempo de siembra
+(`test_seed_ratio_limit_auto_pauses_when_exceeded` y
+`test_seed_time_limit_auto_pauses_when_exceeded`) empezaron a fallar
+porque su `_FakeStatus` (un sustituto mínimo de `lt.torrent_status`)
+no tenía atributo `errc`, y el nuevo código de `_poll_loop` lo
+consulta siempre — se corrigió añadiéndole `self.errc =
+lt.error_code()` (valor 0/sin error por defecto, igual que el caso
+real sin fallos). Suite completa de pytest en verde: 237/237.
+
+La causa raíz concreta de las descargas atascadas del usuario no se
+pudo confirmar al 100% sin acceso root (para descartar o confirmar un
+límite de qgroup de btrfs en `/home`, que no aparece en `df -h` normal
+pero sí puede bloquear escrituras) — si el problema persiste conviene
+que el propio usuario compruebe `sudo btrfs qgroup show -r /home` o el
+uso de snapshots de snapper. Independientemente de esa causa concreta,
+el arreglo de este apartado hace que, a partir de ahora, cualquier
+error de disco real en una descarga de torrent se vea en la GUI como
+"Error" en vez de un atasco silencioso — igual que ya pasaba en las
+otras cuatro redes.
