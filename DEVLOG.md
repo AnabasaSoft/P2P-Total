@@ -6500,3 +6500,53 @@ Validado con `tests/test_download_manager_offline_actions.py`
 la ampliación de `tests/test_downloads_model_connectivity.py`
 (`is_network_connected`), y el test end-to-end de reenganche ya
 mencionado. Suite completa de pytest en verde: 255/255.
+
+### Arreglo: la app se cerraba de golpe (SIGABRT) al hacer búsquedas
+
+Bug real reportado por el usuario ("se me ha cerrado haciendo
+búsquedas"), junto con el volcado completo de `systemd-coredump`. El
+volcado en sí solo trae la traza en C (termina en
+`QMessageLogger::fatal`/`abort()`, típico de una excepción Python sin
+capturar dentro de un slot de PyQt6), sin información de fichero/línea
+Python. La traza real se recuperó con `journalctl --user -u
+<unidad-systemd-de-la-app> --since ... --until ...`, filtrando el
+ruido propio del volcado:
+
+```
+Traceback (most recent call last):
+  File "gui/widgets/search_tab.py", line 267, in _on_context_menu
+KeyError: 'username'
+```
+
+Causa, en `SearchResultsPanel._on_context_menu` (menú contextual de la
+tabla de resultados de búsqueda): `browse_action` ("examinar usuario")
+solo se crea cuando hay exactamente una fila seleccionada, el
+resultado es de Soulseek y trae un nombre de usuario en `extra`; en
+cualquier otro caso se queda en `None`. El código no comprobaba si el
+usuario cerraba el menú sin elegir nada (`Escape` o clic fuera), caso
+en el que `QMenu.exec()` también devuelve `None` -así que
+`action == browse_action` se cumplía por accidente (`None == None`),
+entrando en la rama de "examinar usuario" con un resultado que nunca
+tuvo esa clave (cualquier red que no sea Soulseek, o un resultado de
+Soulseek sin usuario, o varias filas seleccionadas a la vez), de ahí
+el `KeyError` real -no capturado por PyQt6, que aborta el proceso
+entero. Se añadió el mismo guardián `if action is None: return` que ya
+protegía correctamente el menú del historial de búsquedas del mismo
+fichero y el de la pestaña de Transferencias; se auditaron además los
+otros nueve ficheros de la GUI que usan `menu.exec(...)` y ninguno más
+tenía este problema (todas sus variables de acción se crean sin
+condición, o se comparan por pertenencia a un `dict`/`set`, lo que es
+seguro frente a `None`).
+
+Nuevo test `tests/test_search_results_panel_context_menu.py`
+(`QT_QPA_PLATFORM=offscreen`, construyendo widgets PyQt6 reales por
+primera vez en la suite): un primer intento pasaba tanto con el
+código corregido como con el original con el bug, porque usaba
+`viewport().rect().center()` como posición del clic sobre una tabla
+sin `resize()`/`show()` -sin tamaño real, `indexAt(pos)` no cae sobre
+ninguna fila válida y `_on_context_menu` salía antes de llegar al
+código con el bug. Corregido usando `visualRect(...)` de la fila real
+tras dar tamaño al panel, comprobado con `git stash` que así sí falla
+contra el código original (reproduce el `KeyError: 'username'` exacto)
+y pasa contra el corregido. Suite completa de pytest en verde:
+256/256.

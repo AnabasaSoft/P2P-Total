@@ -255,6 +255,17 @@ class SearchResultsPanel(QWidget):
             self._menu_open = False
             self._flush_pending_results()
 
+        # Bug real reportado por el usuario (crash con SIGABRT, traza real
+        # capturada: `KeyError: 'username'` en este método): cerrar el menú
+        # sin elegir nada (Escape o clic fuera) hace que `menu.exec()`
+        # devuelva `None`. Si además `browse_action` no se llegó a crear
+        # (el resultado no era de Soulseek, o no traía usuario), también
+        # vale `None`, y sin este guardián `action == browse_action` se
+        # cumplía por accidente (`None == None`), entrando en la rama de
+        # "examinar usuario" con un resultado que nunca tuvo esa clave.
+        if action is None:
+            return
+
         if action == download_action:
             self._download_selected()
         elif action in category_actions:
