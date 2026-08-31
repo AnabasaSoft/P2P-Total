@@ -144,3 +144,41 @@ async def test_ensure_scanning_merges_requirements_from_several_networks(shared_
     sf = lib.list_files()[0]
     assert sf.sha1 != b""
     assert sf.ed2k != b""
+
+
+def test_hash_worker_matches_direct_hash_file(shared_file):
+    """Bug real reportado por el usuario: "al dar a conectar a todas las
+    redes, hay mucho lag en la gui (va a tirones) hasta que conectan
+    todas". Medido con un cronómetro sobre el bucle de eventos: la causa
+    era que `rescan()` calculaba el hash eD2k (MD4 puro Python, el único
+    sin implementación en C disponible) dentro del propio hilo de fondo
+    (`run_in_daemon_thread`), y ese cómputo -a diferencia de la lectura
+    de disco o de `hashlib.sha1()`, que sí liberan el GIL- lo mantenía
+    agarrado el tiempo suficiente para competir de verdad con el hilo
+    único que lleva el bucle asyncio/Qt mientras las 5 redes conectaban
+    a la vez (~5s de bloqueo repartidos en ~17 cortes de hasta 640ms,
+    contra los ~5 conectando; bajaba a ~0.9s -el mismo suelo que sin
+    ningún escaneo- moviendo el hasheo a `_hash_worker`, un proceso de
+    verdad aparte con su propio GIL). Aquí solo se comprueba la
+    corrección del resultado: que hashear vía `_hash_worker` (usado
+    ahora por `rescan()`) da exactamente el mismo hash que llamar a
+    `_hash_file` directamente."""
+    root, f = shared_file
+    direct = sharing_module._hash_file(f, need_sha1=True, need_ed2k=True)
+    via_worker = sharing_module._hash_worker.hash_file(f, need_sha1=True, need_ed2k=True)
+    assert via_worker == direct
+
+
+def test_hash_worker_returns_none_instead_of_raising_on_missing_file(tmp_path):
+    missing = tmp_path / "no-existe.bin"
+    assert sharing_module._hash_worker.hash_file(missing, need_sha1=True, need_ed2k=True) is None
+
+
+def test_hash_worker_process_is_daemon():
+    """El proceso trabajador debe ser `daemon=True`, igual que los
+    hilos de `run_in_daemon_thread`: así el cierre de la app no se
+    queda colgado esperando a que termine de hashear (mismo bug de
+    fondo que ya se dio con hilos no-daemon, ver `core/async_utils.py`)."""
+    sharing_module._hash_worker._ensure_started()
+    assert sharing_module._hash_worker._process.daemon is True
+    assert sharing_module._hash_worker._process.is_alive()

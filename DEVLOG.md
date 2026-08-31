@@ -6648,3 +6648,104 @@ volcado (unos pocos KB, un problema de rendimiento menor, nada que ver
 con la pérdida total de progreso que sí sufría BitTorrent-. No se
 encontró ningún bug nuevo en ninguna de las cuatro redes. Suite
 completa de pytest en verde: 258/258.
+
+### Arreglo: la GUI iba a tirones (lag notable) al pulsar "conectar" en todas las redes
+
+Bug real reportado por el usuario: "al dar a conectar a todas las
+redes, hay mucho lag en la gui (va a tirones) hasta que conectan
+todas". Reproducido de forma objetiva contra la biblioteca compartida
+real del usuario (~5456 ficheros, ~101GB) con un script que mide el
+hueco real entre iteraciones de un bucle `asyncio.sleep(0.01)` mientras
+`ConnectionManager.connect_network()` conecta las 5 redes a la vez:
+17 cortes del bucle de eventos, 5121ms bloqueados en total, el peor de
+hasta 643ms -tiempo de sobra para notarse como tirones en la GUI, que
+comparte el mismo hilo con el bucle asyncio vía `qasync`.
+
+Causa: al conectar, cada red que sirve ficheros (Soulseek, DC++, G2,
+eMule) dispara `SharedLibrary.ensure_scanning()`, que hashea en un
+hilo de fondo (`run_in_daemon_thread`) los ficheros nuevos o
+modificados -SHA1 para G2 y eD2k (MD4) para eMule. `hashlib.sha1()` es
+una función en C que libera el GIL durante su bucle interno, pero el
+MD4 de este proyecto (`core/md4.py`) es puro Python -la única
+implementación disponible, porque OpenSSL trae MD4 deshabilitado por
+defecto en sistemas modernos- y por tanto mantiene el GIL agarrado
+todo el cómputo. Mientras solo hashea (hilo principal ocioso) no pasa
+nada; el problema aparece cuando el hilo principal ESTÁ TAMBIÉN
+ocupado de verdad, como al conectar varias redes a la vez (parseo de
+protocolo, handshakes): los dos hilos compiten por el único GIL
+("convoy effect"), y cada ráfaga de hasheo bloquea el bucle de eventos
+mientras dura.
+
+Se probaron y descartaron varias mitigaciones dentro del propio
+proceso, todas medidas empíricamente antes de descartarlas: trocear la
+lectura en fragmentos más pequeños, `time.sleep(0)` entre fragmentos,
+un `time.sleep(0.003)` real entre fragmentos, afinar
+`sys.setswitchinterval()` (mejora solo parcial, y con efectos
+colaterales en todo el proceso) y bajar la prioridad del hilo a nivel
+de SO (`nice`/`ioprio_set`) -ninguna resolvió el problema de fondo,
+porque todas siguen compitiendo por el mismo GIL. Solo mover el
+cómputo a un proceso de verdad aparte (su propio GIL, aislado del
+principal) lo soluciona.
+
+Arreglado con un nuevo `_HashWorker` en `core/sharing.py`: un
+`multiprocessing.Process(daemon=True)` persistente (arrancado la
+primera vez que hace falta y reutilizado después, no uno por fichero,
+para no pagar el arranque de un proceso Python nuevo por cada uno de
+los miles de ficheros de una biblioteca real) que recibe peticiones de
+hash por `multiprocessing.Queue` y devuelve el resultado por otra.
+`daemon=True` a propósito, igual que el patrón ya usado en
+`run_in_daemon_thread` (`core/async_utils.py`): así no hace falta
+apagarlo explícitamente y no revive el bug de "la app se queda
+colgada al cerrar esperando trabajo de fondo" que ya se dio y se
+arregló para BitTorrent (ver entrada anterior) -por eso se descartó
+también `concurrent.futures.ProcessPoolExecutor`, que registra un
+`atexit` que espera a un proceso no-daemon. `SharedLibrary.rescan()`
+ahora llama a `_hash_worker.hash_file(...)` en vez de a `_hash_file`
+directamente.
+
+Validado con el mismo script de medición: 5 cortes, 914ms bloqueados
+en total, peor caso 555ms -prácticamente el mismo suelo (~900ms) que
+se mide incluso desconectando el escaneo por completo, es decir, el
+arreglo elimina casi toda la parte de lag atribuible al escaneo
+(~82% menos tiempo bloqueado). Nuevos tests de corrección en
+`tests/test_sharing.py` (hashear vía `_hash_worker` da el mismo
+resultado que `_hash_file` directo, gestiona sin reventar un fichero
+inexistente, y el proceso trabajador es `daemon=True`) -sin
+aserciones basadas en tiempos medidos, que serían frágiles en CI; la
+medición real de mejora queda documentada aquí, no en un test
+permanente. Suite completa de pytest en verde: 261/261.
+
+### Arreglo: el diálogo "Servidores conocidos" salía vacío en G2/eMule pese a que la pestaña de detalles mostraba varios nodos conocidos
+
+Bug real reportado por el usuario: "tanto en gnutella2 como en e2dk/
+kad pone muchos nodos conocidos pero al abrir la ventana de
+servidores conocidos, no sale ninguno".
+
+Causa: la pestaña de detalles de red saca ese número directamente del
+conjunto en memoria que cada backend rellena en vivo con tráfico real
+de protocolo mientras está conectado (`G2Backend._discovered_hubs` vía
+`/KHL`, `EMuleBackend._discovered_servers` vía `OP_SERVERLIST`) -y ya
+existían como propiedades públicas (`discovered_hubs`/
+`discovered_servers`) sin usar en ningún sitio. El diálogo "Servidores
+conocidos" (`KnownServersDialog`, invocado desde
+`_on_browse_servers()` en `gui/widgets/network_tab.py` vía
+`_load_g2_hubs()`/`_load_emule_servers()`), en cambio, nunca miraba
+ese conjunto: solo consultaba la caché en disco -que ambos backends
+solo escriben en `disconnect()`, nunca mientras la red sigue
+conectada- más una consulta externa fresca (GWebCache para G2,
+`server.met` público para eMule). Con la red recién conectada y sin
+haberse desconectado nunca, la caché en disco podía estar vacía o
+desactualizada y la consulta externa no incluye lo que el propio hub/
+servidor ya nos ha soplado en esta sesión -de ahí el diálogo vacío
+pese al número real de la pestaña de detalles.
+
+Arreglado pasando el conjunto en vivo del backend ya conectado
+(obtenido con `self._manager.get_backend(network)`) a los loaders vía
+`functools.partial`, fusionado con la caché en disco y la consulta
+externa (con deduplicación por `(host, puerto)`, sin descartar los
+datos extra -nombre/usuarios/ficheros/ping- que sí trae la lista
+pública de eMule cuando coincide con un servidor también visto en
+vivo). Nuevo test `tests/test_known_servers_live_merge.py` (4 casos:
+el conjunto en vivo aparece solo, se fusiona sin duplicar con la caché/
+lista externa, y conserva los metadatos de la lista pública cuando hay
+coincidencia). Suite completa de pytest en verde: 265/265.

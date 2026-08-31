@@ -15,6 +15,7 @@ búsqueda contra este índice.
 
 import asyncio
 import hashlib
+import multiprocessing
 import os
 from base64 import b32decode
 from dataclasses import dataclass, field
@@ -95,6 +96,93 @@ def _hash_file(path: Path, *, need_sha1: bool = True,
             ed2k_parts = part_hashes
     sha1_digest = sha1.digest() if sha1 is not None else b""
     return sha1_digest, ed2k, ed2k_parts
+
+
+def _hash_worker_loop(tasks: "multiprocessing.Queue", results: "multiprocessing.Queue") -> None:
+    while True:
+        item = tasks.get()
+        if item is None:
+            return
+        path, need_sha1, need_ed2k = item
+        try:
+            results.put(_hash_file(Path(path), need_sha1=need_sha1, need_ed2k=need_ed2k))
+        except Exception as exc:  # noqa: BLE001 - se reenvía tal cual a quien pidió el hash
+            results.put(exc)
+
+
+class _HashWorker:
+    """Bug real reportado por el usuario: "al dar a conectar a todas las
+    redes, hay mucho lag en la gui (va a tirones) hasta que conectan
+    todas". Medido con un cronómetro sobre el propio bucle de eventos
+    (heartbeat de 10ms que registra cualquier hueco > 50ms): conectar
+    las 5 redes con una biblioteca compartida real de ~100GB sin
+    hashear todavía bloqueaba el bucle un total de ~5s repartidos en
+    ~17 cortes de hasta 640ms -clásico "tirón"-, y ese bloqueo
+    desaparecía casi del todo (a ~900ms) si se desactivaba el escaneo
+    de la biblioteca compartida, así que la causa era ese escaneo.
+
+    La causa exacta no es la propia lectura de disco (que sí libera el
+    GIL durante la syscall) sino el hasheo eD2k en sí: `core/md4.py` es
+    una implementación en Python puro (obligada, ver ese fichero) que,
+    a diferencia de `hashlib.sha1()` (en C, libera el GIL durante su
+    propio cómputo), mantiene el GIL agarrado mientras calcula -y
+    corriendo en un hilo (`run_in_daemon_thread`), compite por ese
+    mismo GIL con el hilo único que lleva el bucle asyncio/Qt, que en
+    ese momento también anda ocupado de verdad con el handshake de las
+    5 redes a la vez. Confirmado además que ni reducir el tamaño de
+    trozo, ni ceder el hilo explícitamente entre trozos
+    (`time.sleep(0)` o uno real), ni bajarle la prioridad de CPU/E-S al
+    hilo (`nice`/`ioprio_set`) reduce el bloqueo de forma apreciable
+    -es contención de GIL de verdad entre dos hilos activos a la vez,
+    no un problema de qué tan a menudo cede el turno el hilo de
+    hasheo.
+
+    Único arreglo que sí funciona en la práctica (comprobado con el
+    mismo cronómetro: baja el bloqueo de ~5s a ~1s, el mismo suelo que
+    queda incluso sin ningún escaneo, solo por el propio trajín de
+    conectar 5 redes reales a la vez): mover el cómputo del hash a un
+    proceso de verdad aparte, con su propio GIL independiente que no
+    compite con el del proceso principal -aquí, un único proceso
+    trabajador persistente (evita el coste de arrancar un proceso por
+    fichero, inasumible con miles de ficheros pequeños) al que se le
+    van mandando rutas por una `multiprocessing.Queue` y del que se
+    leen los hashes por otra. `daemon=True`, igual que
+    `run_in_daemon_thread`, para que no haga falta ningún shutdown
+    explícito ni pueda dejar el cierre de la app colgado esperando a
+    que termine de hashear."""
+
+    def __init__(self) -> None:
+        self._tasks: multiprocessing.Queue | None = None
+        self._results: multiprocessing.Queue | None = None
+        self._process: multiprocessing.Process | None = None
+
+    def _ensure_started(self) -> None:
+        if self._process is not None and self._process.is_alive():
+            return
+        self._tasks = multiprocessing.Queue()
+        self._results = multiprocessing.Queue()
+        self._process = multiprocessing.Process(
+            target=_hash_worker_loop, args=(self._tasks, self._results), daemon=True,
+        )
+        self._process.start()
+
+    def hash_file(self, path: Path, *, need_sha1: bool, need_ed2k: bool
+                  ) -> tuple[bytes, bytes, list[bytes]] | None:
+        self._ensure_started()
+        self._tasks.put((str(path), need_sha1, need_ed2k))
+        result = self._results.get()
+        if isinstance(result, Exception):
+            return None
+        return result
+
+
+# Un único trabajador para todo el proceso, reutilizado entre llamadas
+# -mismo patrón que `core.rate_limiter`/`core.stats_tracker`, una
+# instancia a nivel de módulo en vez de una por `SharedLibrary` (así
+# una única red que sirve ficheros no paga el arranque de un proceso
+# Python nuevo, y varias `SharedLibrary` -no debería haber más de una
+# real, ver `ConnectionManager`- no multiplican procesos).
+_hash_worker = _HashWorker()
 
 
 class SharedLibrary:
@@ -241,7 +329,7 @@ class SharedLibrary:
                     missing_sha1 = need_sha1 and not has_sha1
                     missing_ed2k = need_ed2k and not has_ed2k
                     if missing_sha1 or missing_ed2k:
-                        hashed = _hash_file(full, need_sha1=missing_sha1, need_ed2k=missing_ed2k)
+                        hashed = _hash_worker.hash_file(full, need_sha1=missing_sha1, need_ed2k=missing_ed2k)
                         if hashed is None:
                             continue
                         h_sha1, h_ed2k, h_ed2k_parts = hashed

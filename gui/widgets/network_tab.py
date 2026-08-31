@@ -8,6 +8,7 @@ tabla plana -- así cabe información específica de cada protocolo
 en una única columna de texto."""
 
 import asyncio
+from functools import partial
 
 from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QIcon, QPixmap
@@ -263,12 +264,16 @@ class NetworkTab(QWidget):
                 hub = dialog.selected_hub
                 asyncio.ensure_future(self._connect_with_override(network, hub.host, hub.port))
         elif network == Network.EMULE:
-            dialog = KnownServersDialog(_load_emule_servers, self)
+            backend = self._manager.get_backend(network)
+            live = getattr(backend, "discovered_servers", set())
+            dialog = KnownServersDialog(partial(_load_emule_servers, live), self)
             if dialog.exec() and dialog.selected_server is not None:
                 host, port = dialog.selected_server
                 asyncio.ensure_future(self._connect_with_override(network, host, port))
         elif network == Network.GNUTELLA2:
-            dialog = KnownServersDialog(_load_g2_hubs, self)
+            backend = self._manager.get_backend(network)
+            live = getattr(backend, "discovered_hubs", set())
+            dialog = KnownServersDialog(partial(_load_g2_hubs, live), self)
             if dialog.exec() and dialog.selected_server is not None:
                 host, port = dialog.selected_server
                 asyncio.ensure_future(self._connect_with_override(network, host, port))
@@ -300,16 +305,23 @@ class NetworkTab(QWidget):
             dialog.exec()
 
 
-async def _load_emule_servers() -> list[dict]:
+async def _load_emule_servers(live: set[tuple[str, int]] = frozenset()) -> list[dict]:
     """server.met público -host/port siempre, y name/description/ping/
     usuarios/ficheros cuando el propio fichero los trae (depende de
     quién mantenga la lista pública descargada, no es un dato en
-    vivo)."""
+    vivo)- más los servidores que el propio servidor eD2k al que
+    estemos conectados ahora mismo nos haya ido soplando en esta
+    sesión vía OP_SERVERLIST (`live`, `EMuleBackend.discovered_servers`)
+    -sin esto, la pestaña de detalles podía mostrar varios "nodos
+    conocidos" mientras este diálogo, que solo miraba la caché en
+    disco (se guarda solo al desconectar) y la lista pública, se veía
+    vacío."""
     from backends.emule_backend import fetch_public_server_list
 
     config = load_config()
     raw = await fetch_public_server_list(proxy=config.proxy)
-    return [
+    seen = {(entry["host"], entry["port"]) for entry in raw}
+    entries = [
         {
             "name": entry.get("name"),
             "host": entry["host"],
@@ -321,13 +333,22 @@ async def _load_emule_servers() -> list[dict]:
         }
         for entry in raw
     ]
+    for host, port in live:
+        if (host, port) in seen:
+            continue
+        seen.add((host, port))
+        entries.append({"host": host, "port": port})
+    return entries
 
 
-async def _load_g2_hubs() -> list[dict]:
+async def _load_g2_hubs(live: set[tuple[str, int]] = frozenset()) -> list[dict]:
     """Hubs G2 conocidos: caché local de sesiones anteriores + los que
-    devuelvan ahora mismo los GWebCache -sin usuarios/ficheros/ping,
-    porque ese dato no existe en el protocolo G2 real (mismo límite ya
-    documentado en la subpestaña de detalles del punto 35)."""
+    devuelvan ahora mismo los GWebCache + los descubiertos en la sesión
+    actual vía /KHL por el hub al que estemos conectados ahora mismo
+    (`live`, `G2Backend.discovered_hubs` -mismo motivo que en
+    `_load_emule_servers`) -sin usuarios/ficheros/ping, porque ese dato
+    no existe en el protocolo G2 real (mismo límite ya documentado en
+    la subpestaña de detalles del punto 35)."""
     from backends.g2_backend import discover_hubs, load_hub_cache
 
     config = load_config()
@@ -338,7 +359,7 @@ async def _load_g2_hubs() -> list[dict]:
         discovered = []
     seen: set[tuple[str, int]] = set()
     entries = []
-    for host, port in list(cached) + discovered:
+    for host, port in list(cached) + discovered + list(live):
         if (host, port) in seen:
             continue
         seen.add((host, port))
