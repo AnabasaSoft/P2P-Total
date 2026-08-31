@@ -10,6 +10,12 @@ Uso:
     python main.py gui                                        (interfaz gráfica PyQt6)
     python main.py search <query> --network torrent|soulseek|dcpp|gnutella2|emule
     python main.py download <query> <carpeta-destino> --network torrent|soulseek|dcpp|gnutella2|emule
+    python main.py download-combined <carpeta-destino> --torrent <magnet/infohash/ruta> --gnutella2 <source_id> --emule <source_id>
+                                                                (punto 44 del backlog, v1: descarga agregada
+                                                                 multired del MISMO contenido combinando al
+                                                                 menos dos de estas tres redes a la vez; sin
+                                                                 integración con la GUI ni con pausar/reanudar/
+                                                                 cancelar todavía)
 
 Para torrent, <query> puede ser un magnet link, un infohash de 40 hex,
 la ruta a un .torrent local, o texto libre (nombre de película, serie,
@@ -380,6 +386,67 @@ async def cmd_download(query: str, dest: str, timeout: float, network: Network,
             print(f"\nDescarga completada: {dest}/{download.title}")
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\nMonitor detenido por el usuario.")
+
+
+async def cmd_download_combined(dest: str, sources: dict[Network, str], timeout: float,
+                                  hub_override: str | None, debug: bool) -> None:
+    """Punto 44 del backlog (v1): descarga agregada multired -combina
+    tramos de bytes de BitTorrent/Gnutella2/eMule del MISMO contenido
+    en un único fichero, descargando de todas las redes a la vez. A
+    diferencia de 'download', no pasa por `DownloadManager` (v1 no se
+    integra con la GUI ni con pausar/reanudar/cancelar, ver DEVLOG.md)
+    así que aquí no hay progreso en vivo por red, solo el resultado
+    final. `sources` es exactamente el mismo `source_id` que copiarías
+    para un 'download' normal de esa red (para torrent, el propio
+    magnet/infohash/ruta .torrent, no un source_id)."""
+    from core.aggregated_download import AggregatedDownloadError, download_aggregated
+
+    config = load_config()
+    apply_global_limits(config)
+    apply_ip_filter_config(config)
+
+    torrent_backend = g2_backend = emule_backend = None
+    search_results: dict[Network, SearchResult] = {}
+
+    if Network.TORRENT in sources:
+        torrent_backend = TorrentBackend(proxy=config.proxy)
+        await torrent_backend.connect()
+        search_results[Network.TORRENT] = SearchResult(
+            network=Network.TORRENT, title="", size_bytes=0, source_id=sources[Network.TORRENT],
+        )
+    if Network.GNUTELLA2 in sources:
+        g2_backend = await _build_g2_backend(hub_override, timeout, debug)
+        query = sources[Network.GNUTELLA2].strip()
+        search_results[Network.GNUTELLA2] = SearchResult(
+            network=Network.GNUTELLA2, title=query.split(":::")[-1], size_bytes=0, source_id=query,
+        )
+    if Network.EMULE in sources:
+        emule_backend = await _build_emule_backend(hub_override, debug)
+        query = sources[Network.EMULE].strip()
+        file_hash_hex, size_str, title = query.split(":::", 2)
+        search_results[Network.EMULE] = SearchResult(
+            network=Network.EMULE, title=title, size_bytes=int(size_str), source_id=query,
+        )
+
+    if Network.TORRENT in search_results:
+        # A diferencia de G2/eMule, el tamaño de un torrent no viene en
+        # el propio source_id -se descubre en el `probe_torrent_metadata`
+        # de dentro de `download_aggregated`-, así que se toma prestado
+        # el de cualquier otra fuente ya conocida para pasar la
+        # validación previa de tamaños coincidentes.
+        known_size = next((r.size_bytes for n, r in search_results.items() if n != Network.TORRENT), 0)
+        search_results[Network.TORRENT].size_bytes = known_size
+
+    print(f"Combinando {len(search_results)} red(es): {[n.value for n in search_results]}...")
+    try:
+        result = await download_aggregated(
+            search_results, dest, torrent_backend=torrent_backend,
+            g2_backend=g2_backend, emule_backend=emule_backend,
+        )
+    except AggregatedDownloadError as e:
+        print(f"Descarga agregada fallida: {e}")
+        sys.exit(1)
+    print(f"Descarga agregada completada: {result.dest_file} ({result.size_bytes} bytes)")
 
 
 async def _build_soulseek_backend() -> SoulseekBackend:
@@ -758,6 +825,24 @@ def main() -> None:
             print("Falta la carpeta destino: python main.py download <source_id> <carpeta> [--network ...]")
             sys.exit(1)
         asyncio.run(cmd_download(query, sys.argv[3], timeout, network, hub_override))
+    elif command == "download-combined":
+        dest = query  # aquí el "query" posicional de más arriba es en realidad la carpeta destino
+        sources: dict[Network, str] = {}
+        for flag, net in (("--torrent", Network.TORRENT), ("--gnutella2", Network.GNUTELLA2),
+                           ("--emule", Network.EMULE)):
+            if flag in sys.argv:
+                sources[net] = sys.argv[sys.argv.index(flag) + 1]
+        if len(sources) < 2:
+            print(
+                "download-combined necesita al menos dos fuentes de redes distintas del mismo\n"
+                "contenido:\n"
+                "  python main.py download-combined <carpeta-destino> "
+                "--torrent <magnet/infohash/ruta.torrent> --gnutella2 <source_id> --emule <source_id>\n"
+                "(cada source_id es el que copiarías para un 'download' normal de esa red;\n"
+                " para torrent no hace falta source_id, vale el magnet/infohash/ruta directamente)"
+            )
+            sys.exit(1)
+        asyncio.run(cmd_download_combined(dest, sources, timeout, hub_override, debug))
     else:
         print(f"Comando desconocido: {command}")
         print(__doc__)

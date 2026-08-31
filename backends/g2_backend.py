@@ -1596,6 +1596,79 @@ class G2Backend(NetworkBackend):
             entry["writer"] = None
             writer.close()
 
+    async def download_range(self, result: SearchResult, out_path: str, range_start: int, range_end: int,
+                               on_progress: Callable[[int], None] | None = None) -> None:
+        """Punto 44 del backlog (v1, descarga agregada multired):
+        descarga solo el tramo [range_start, range_end) de bytes de
+        `result` -mismo GET /uri-res/N2R que `start_download`, pero
+        pidiendo un rango exacto vía 'Range: bytes=a-b' en vez de
+        abierto- y lo escribe directamente en el offset que le
+        corresponde dentro de `out_path` (un fichero ya existente,
+        compartido con los tramos de las otras redes). A diferencia de
+        `start_download`: sin fallback /PUSH (solo conexión directa) ni
+        verificación de hash aquí -eso lo hace el coordinador de la
+        descarga agregada una vez completo el fichero entero-. Lanza
+        una excepción si el origen no soporta 'Range:' (código 200 en
+        vez de 206) o si la conexión se corta a mitad: el coordinador
+        de descarga agregada usa una semántica todo-o-nada en la v1, no
+        reintenta con otra fuente."""
+        parts = result.source_id.split(":::", 3)
+        if len(parts) == 4:
+            host_port, sha1_b32, _guid_hex, _filename = parts
+        else:
+            host_port, sha1_b32, _filename = parts
+        host, port_str = host_port.rsplit(":", 1)
+
+        try:
+            reader, writer = await proxy_open_connection(
+                host, int(port_str), proxy=self._proxy, timeout=self._DOWNLOAD_CONNECT_TIMEOUT
+            )
+        except asyncio.TimeoutError as e:
+            raise RuntimeError(f"{host}:{port_str} no respondió a tiempo") from e
+        except (ConnectionError, OSError) as e:
+            raise RuntimeError(f"no se pudo conectar directamente al host ({e})") from e
+
+        try:
+            path = f"/uri-res/N2R?urn:sha1:{sha1_b32}"
+            request = (
+                f"GET {path} HTTP/1.1\r\n"
+                f"Host: {host}\r\n"
+                f"User-Agent: P2P-Total/0.1\r\n"
+                f"X-Features: g2/1.0\r\n"
+                f"Range: bytes={range_start}-{range_end - 1}\r\n"
+                f"Connection: close\r\n\r\n"
+            )
+            writer.write(request.encode("ascii"))
+            await writer.drain()
+
+            status_line = await asyncio.wait_for(reader.readline(), timeout=self._DOWNLOAD_CONNECT_TIMEOUT)
+            if b"206" not in status_line:
+                raise RuntimeError(
+                    "el origen no soporta descarga por tramos (Range:), no vale para "
+                    f"descarga agregada: {status_line.decode(errors='replace').strip()}"
+                )
+            while True:
+                line = await asyncio.wait_for(reader.readline(), timeout=self._DOWNLOAD_STALL_TIMEOUT)
+                if line in (b"\r\n", b""):
+                    break
+
+            want = range_end - range_start
+            downloaded = 0
+            with open(out_path, "r+b") as f:
+                f.seek(range_start)
+                while downloaded < want:
+                    chunk = await asyncio.wait_for(
+                        reader.read(min(65536, want - downloaded)), timeout=self._DOWNLOAD_STALL_TIMEOUT
+                    )
+                    if not chunk:
+                        raise RuntimeError(f"conexión cortada tras {downloaded}/{want} bytes del tramo")
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if on_progress:
+                        on_progress(downloaded)
+        finally:
+            writer.close()
+
     async def pause_download(self, download: Download) -> None:
         entry = self._active.get(download.source_id)
         if entry is None:
@@ -1777,14 +1850,21 @@ class G2Backend(NetworkBackend):
 
             offset = 0
             range_header = headers.get("range", "")
-            if range_header.startswith("bytes="):
+            range_requested = range_header.startswith("bytes=")
+            if range_requested:
                 try:
                     offset = int(range_header[len("bytes="):].split("-", 1)[0])
                 except ValueError:
                     offset = 0
             offset = max(0, min(offset, shared.size))
 
-            status = "206 Partial Content" if offset else "200 OK"
+            # range_requested (no solo offset > 0): un tramo pedido desde
+            # el propio byte 0 -como puede pasar en una descarga agregada
+            # (punto 44 del backlog) si a G2 le toca el principio del
+            # fichero- también debe contestarse con 206, no con 200; si no,
+            # el cliente lo interpretaría como que este servent no admite
+            # 'Range:' en absoluto.
+            status = "206 Partial Content" if range_requested else "200 OK"
             remaining = shared.size - offset
             response = (
                 f"HTTP/1.1 {status}\r\n"

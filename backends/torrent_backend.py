@@ -561,6 +561,86 @@ class TorrentBackend(NetworkBackend):
         sha1, ed2k = hashed
         database.record_hash_correlation(size, sha1=sha1, ed2k=ed2k, infohash=infohash)
 
+    # ---- descarga agregada multired (punto 44 del backlog, v1) ----
+
+    async def probe_torrent_metadata(self, magnet_or_path: str, save_path: str,
+                                       timeout: float = 30.0) -> tuple["lt.torrent_handle", str, int, int, bytes]:
+        """Primera mitad de una descarga agregada: añade el torrent a la
+        sesión en modo 'solo metadatos' (mismo `upload_mode` que ya usa
+        `search()` para magnets, para no empezar a bajar nada de verdad
+        todavía) y espera a tener nombre/`piece_length`/tamaño reales -
+        BitTorrent reparte por piezas de tamaño fijo, no por bytes
+        sueltos, así que el coordinador de la descarga agregada necesita
+        `piece_length` para poder repartir el fichero en tramos que
+        encajen con piezas completas antes de llamar a
+        `download_piece_range()`. El handle se queda vivo en la sesión,
+        en pausa, hasta esa siguiente llamada."""
+        if self._session is None:
+            raise RuntimeError("Backend de torrent no conectado")
+
+        if _is_torrent_file(magnet_or_path):
+            info = lt.torrent_info(os.path.abspath(magnet_or_path.strip()))
+            params = lt.add_torrent_params()
+            params.ti = info
+            params.save_path = save_path
+            params.flags |= lt.torrent_flags.upload_mode
+            handle = self._session.add_torrent(params)
+        else:
+            params = lt.parse_magnet_uri(_to_magnet(magnet_or_path))
+            params.save_path = save_path
+            params.flags |= lt.torrent_flags.upload_mode
+            handle = self._session.add_torrent(params)
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            if handle.status().has_metadata:
+                info = handle.torrent_file()
+                if info.num_files() != 1:
+                    self._session.remove_torrent(handle)
+                    raise ValueError(
+                        "Descarga agregada (punto 44): solo se admiten torrents de un único archivo"
+                    )
+                return handle, info.name(), info.piece_length(), info.total_size(), handle.info_hash().to_bytes()
+            await asyncio.sleep(0.2)
+
+        self._session.remove_torrent(handle)
+        raise TimeoutError(f"No se obtuvieron metadatos del torrent en {timeout}s")
+
+    async def download_piece_range(self, handle: "lt.torrent_handle", range_start: int, range_end: int,
+                                     on_progress: Callable[[int], None] | None = None) -> None:
+        """Segunda mitad: restringe el torrent -ya con metadatos, ver
+        `probe_torrent_metadata`- a solo las piezas que cubren
+        [range_start, range_end) y espera a que estén todas
+        descargadas. `range_start` debe venir ya alineado a un múltiplo
+        de `piece_length` (responsabilidad del coordinador, que reparte
+        el resto de tramos de las otras redes evitando ese redondeo en
+        vez de dejar que se solape con él); `range_end` no necesita
+        alineación porque siempre es el final real del fichero."""
+        info = handle.torrent_file()
+        piece_length = info.piece_length()
+        num_pieces = info.num_pieces()
+        piece_start = range_start // piece_length
+        piece_end = min(-(-range_end // piece_length), num_pieces)
+
+        priorities = [0] * num_pieces
+        for i in range(piece_start, piece_end):
+            priorities[i] = 4
+        handle.prioritize_pieces(priorities)
+        handle.set_upload_mode(False)
+        handle.resume()
+
+        try:
+            want = range_end - range_start
+            while True:
+                status = handle.status()
+                if on_progress:
+                    on_progress(min(status.total_wanted_done, want))
+                if status.state in (lt.torrent_status.states.finished, lt.torrent_status.states.seeding):
+                    break
+                await asyncio.sleep(0.3)
+        finally:
+            self._session.remove_torrent(handle)
+
     async def reattach_download(self, download: Download) -> None:
         """Reengancha un torrent tras reiniciar la app: la sesión de
         libtorrent se crea desde cero en cada `connect()`, así que hay

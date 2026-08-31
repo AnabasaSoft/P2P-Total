@@ -6783,7 +6783,7 @@ documentando cada uno al completarlo):
     a las redes ni a otros clientes. Es el bloque base que hace falta
     antes del punto 44: sin saber que dos resultados de redes
     distintas son "el mismo fichero", no hay nada que combinar.
-44. ⬜ Descarga agregada multired (BitTorrent + Gnutella2 + eD2k/Kad a
+44. 🟡 Descarga agregada multired (BitTorrent + Gnutella2 + eD2k/Kad a
     la vez para un mismo contenido) — apoyándose en la tabla de
     correlación del punto 43, un modo de descarga que no dependa de un
     único backend/`SearchResult`, repartiendo rangos de bytes del
@@ -6792,11 +6792,14 @@ documentando cada uno al completarlo):
     partes de ~9.5MB, y G2 ya soporta descarga por rango HTTP -mismo
     mecanismo usado para pausar/reanudar, punto ya completado-, así
     que las tres ya tienen la primitiva de "pedir bytes X-Y" necesaria
-    a nivel de protocolo). Requiere un gestor de descarga nuevo en
-    `core/download_manager.py` capaz de coordinar varios backends para
-    una sola fila de Transferencias, y su propia interfaz en la GUI
-    para elegir "combinar estas fuentes de varias redes" en vez de
-    iniciar una descarga normal de una sola.
+    a nivel de protocolo). **v1 completada** (motor núcleo: primitivas
+    de descarga por rango en los tres backends + coordinador +
+    verificación final, ver entrada de abajo); **pendiente una fase 2**
+    con la integración en `DownloadManager`/GUI (pausar/reanudar/
+    cancelar de una descarga agregada, elegir "combinar" desde la
+    pestaña Búsqueda) que requiere tocar el enum `Network` y cómo
+    `DownloadManager` enruta esas operaciones -hoy siempre por un único
+    `download.network`-, deliberadamente fuera del alcance de la v1.
 
 ### Punto 43 del backlog: tabla de correlación local de hashes entre redes
 
@@ -6865,3 +6868,144 @@ prueba, no al código de producción. Suite completa de pytest en verde:
 `test_torrent_disconnect_flushes_progress.py`, que pasa limpio tanto
 en solitario como al repetir la suite entera -no relacionado con este
 cambio-).
+
+### Punto 44 del backlog (v1): motor núcleo de descarga agregada multired
+
+Antes de implementar, se hizo un análisis de alcance real (backends,
+`DownloadManager`, GUI) que confirmó que el punto 44 tal y como estaba
+anotado era mucho más invasivo de lo que sugería su redacción original
+-tres obstáculos concretos: cada backend tiene una máquina de estados
+de descarga monolítica pensada para "todo el fichero de una vez"; el
+enum `Network` está profundamente enredado en la GUI (tema/i18n/
+ajustes) y en cómo `DownloadManager.pause()/resume()/cancel()` enrutan
+siempre por un único `download.network`, lo que hace torpe encajar ahí
+una descarga que pertenece a varias redes a la vez; y BitTorrent reparte
+por piezas de tamaño fijo, no por bytes sueltos, así que hace falta una
+coordinación en dos fases (metadatos primero, tramo después) que las
+otras dos redes no necesitan-. Con el visto bueno explícito del usuario
+("vale, empieza con el v1"), se acotó a un v1 honesto: motor núcleo
+(primitivas de descarga por rango en los tres backends + un coordinador
+que las combina) con semántica **todo o nada** -si el tramo de
+cualquier red falla, toda la descarga agregada falla con un error
+claro, sin repartir de nuevo el tramo fallido entre las redes que sí
+funcionaron-, dejando explícitamente fuera de esta v1 la integración
+con `DownloadManager`/GUI (elegir "combinar" desde Búsqueda, y pausar/
+reanudar/cancelar una descarga agregada) para una fase 2 aparte.
+
+**Primitivas de descarga por rango, una por backend** (todas devuelven
+sencillamente cuando terminan el tramo pedido, sin crear una fila de
+`Download` ni tocar la base de datos):
+
+- `G2Backend.download_range()` (`backends/g2_backend.py`): mismo GET
+  `/uri-res/N2R?urn:sha1:...` que `start_download`, pero con un
+  `Range: bytes=a-b` explícito (con final) en vez del `bytes=a-`
+  abierto que ya usa el pausar/reanudar existente; exige `206 Partial
+  Content` (si el origen contesta `200`, no soporta `Range:` y no vale
+  para agregada -sin plan B, a diferencia de `start_download` no hay
+  reintento con `/PUSH`). Al escribirla salió un bug real en el lado
+  servidor (`_serve_http`, el que ya sirve subidas y pausar/reanudar
+  desde siempre): confundía "sin cabecera `Range:`" con "`Range:`
+  pidiendo desde el byte 0" -ambos ponían `offset = 0`- y contestaba
+  `200` en los dos casos; como una descarga agregada bien puede
+  asignarle a G2 el tramo que empieza justo en el byte 0 del fichero,
+  eso habría hecho fallar esa combinación en concreto siempre.
+  Arreglado distinguiendo "hubo cabecera `Range:`" de "a qué offset
+  apunta", contestando `206` en el primer caso sea cual sea el offset
+  -no afecta a pausar/reanudar, que nunca manda `Range:` si el offset
+  ya es 0.
+- `EMuleBackend.download_range()` / `_download_range_from_source()`
+  (`backends/emule_backend.py`): descubrimiento fue el hallazgo clave
+  aquí: `OP_REQUESTPARTS` ya admite pedir cualquier rango de bytes
+  arbitrario -los ~9.5MB de "PARTSIZE" que menciona la redacción
+  original del punto 44 solo se usan en otro sitio, para el hashset de
+  verificación por partes, no limitan lo que se puede pedir en una
+  petición-, así que no hizo falta tocar el protocolo, solo acotar el
+  bucle existente de petición/recepción a `[range_start, range_end)`
+  en vez de a `download.size_bytes` completo. v1: solo fuentes
+  directamente alcanzables (HighID) encontradas vía servidor
+  (`OP_GETSOURCES`) o Kad, sin el plan B de `OP_CALLBACKREQUEST` para
+  LowID que sí tiene `start_download`, y sin esperar en cola real
+  (`OP_QUEUERANK`/`OP_QUEUERANKING` se tratan como "prueba la
+  siguiente fuente", igual de filosofía que ya tiene `_run_download`
+  para el caso normal). Se descubrió también, al escribir el test de
+  integración real, que llamar a esto sin estar conectado a ningún
+  servidor eD2k (`self._server_writer is None`) tiraba abajo la
+  llamada con un `AttributeError` en vez de fallar limpio -arreglado
+  comprobando la conexión antes de intentar `OP_GETSOURCES`, cayendo
+  directamente a Kad si no hay servidor, igual que ya hace el resto de
+  la app cuando falta una fuente de descubrimiento.
+- `TorrentBackend.probe_torrent_metadata()` +
+  `download_piece_range()` (`backends/torrent_backend.py`): dos fases,
+  porque BitTorrent no puede pedir bytes sueltos, solo piezas
+  completas. La primera añade el torrent en modo "solo metadatos"
+  (mismo truco de `upload_mode` que ya usa `search()` para magnets;
+  arreglado de paso para que también se aplicase a la rama de fichero
+  `.torrent` local, que se había quedado sin él al escribir esto
+  -antes esa rama empezaba a descargar de verdad nada más añadirla,
+  incluso antes de saber qué tramo hacía falta) y espera a tener
+  `piece_length`/tamaño/nombre reales, rechazando torrents de varios
+  archivos (misma limitación que el punto 43). La segunda convierte el
+  rango de bytes pedido en un rango de índices de pieza vía
+  `prioritize_pieces()` (prioridad 4 las piezas que tocan, 0 el
+  resto), sale del modo solo-metadatos y espera a `finished`/`seeding`,
+  usando `total_wanted_done` (recortado al ancho del tramo pedido) para
+  el progreso.
+
+**Coordinador** (`core/aggregated_download.py`, función
+`download_aggregated()`): valida que haya al menos dos redes de las
+tres elegibles (`TORRENT`/`GNUTELLA2`/`EMULE`) y que todas declaren el
+mismo `size_bytes`; reparte `[0, total_size)` en tramos contiguos -si
+BitTorrent participa, se le asigna siempre la cola del fichero,
+redondeada hacia abajo al múltiplo de `piece_length` más cercano (no
+puede empezar a media pieza), y el resto de redes se reparten a partes
+iguales el tramo restante del principio, sin ninguna alineación
+especial porque tanto G2 como eD2k admiten cualquier rango de bytes-;
+crea el fichero de destino con `Path.touch(exist_ok=True)` (nunca
+trunca, así que da igual si BitTorrent ya lo había creado él solo o
+no; en POSIX escribir más allá del final de un fichero vacío extiende
+el hueco sin más); lanza las descargas de cada red en paralelo con
+`asyncio.gather` (semántica todo o nada: si cualquiera falla, se
+cancelan las demás y se relanza el error); y al terminar verifica el
+fichero combinado byte a byte calculando su SHA1/eD2k
+(`hash_file_for_correlation()`, reutilizado tal cual del punto 43) y
+comparándolo contra los hashes que declaren las fuentes de G2/eMule
+realmente usadas -siempre hay al menos uno posible, porque para que la
+validación de "al menos dos redes" pase con solo BitTorrent + una de
+las otras dos ya hay un hash nativo real de por medio-, y si además
+BitTorrent participó, aprovecha para llamar a
+`database.record_hash_correlation()` con la tripleta completa,
+alimentando de vuelta la tabla del punto 43.
+
+**Validado con 13 tests nuevos, todos contra infraestructura local
+real (dos backends reales hablando entre sí por loopback, nunca contra
+la red real ni con mocks del propio protocolo)**: `tests/
+test_g2_download_range.py` (tramo exacto escrito en su offset,
+incluido el caso límite del tramo que empieza en el byte 0 que
+destapó el bug de `_serve_http`, y el error claro cuando el origen
+ignora `Range:`), `tests/test_emule_download_range.py` (tramo exacto
+vía `_download_range_from_source` contra un `EMuleBackend` real
+sirviendo desde su propia `SharedLibrary`, y el error claro sin
+fuentes alcanzables), `tests/test_torrent_probe_and_range.py` (mismo
+patrón de siembra+descarga real por loopback que ya usa
+`test_torrent_disconnect_flushes_progress.py`: probar metadatos,
+comprobar que la fase 1 no descarga nada todavía, pedir solo un tramo
+final y verificar que coincide byte a byte con el original; y el
+rechazo de un torrent de varios archivos) y `tests/
+test_aggregated_download.py` (reparto de rangos puro sin I/O,
+validaciones de entrada -red no elegible, menos de dos fuentes,
+tamaños que no coinciden- y una integración de extremo a extremo real
+combinando un `G2Backend` y un `EMuleBackend` locales sirviendo el
+mismo fichero, con el resultado combinado verificado byte a byte).
+Suite completa de pytest en verde: 286/286 (con el mismo fallo puntual
+intermitente y no relacionado, ya documentado en el punto 43, de
+`test_torrent_disconnect_flushes_progress.py` bajo carga -pasa limpio
+en solitario).
+
+Se añadió también un hook de CLI para validación manual/scripted sin
+pasar por la GUI (todavía sin construir, ver más arriba):
+`python main.py download-combined <carpeta-destino> --torrent
+<magnet/infohash/ruta> --gnutella2 <source_id> --emule <source_id>`
+-mismo formato de `source_id` que ya exige `download` para esas redes,
+copiado de un resultado de `search` previo. No pasa por
+`DownloadManager` (la v1 no se integra con él), así que no hay
+progreso en vivo por red, solo el resultado final o el error.

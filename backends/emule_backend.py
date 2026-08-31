@@ -1795,6 +1795,109 @@ class EMuleBackend(NetworkBackend):
         finally:
             writer.close()
 
+    async def download_range(self, result: SearchResult, out_path: str, range_start: int, range_end: int,
+                               on_progress: Callable[[int], None] | None = None) -> None:
+        """Punto 44 del backlog (v1, descarga agregada multired):
+        descarga solo el tramo [range_start, range_end) de `result` y
+        lo escribe en el offset que le corresponde dentro de
+        `out_path` (compartido con los tramos de las otras redes).
+        OP_REQUESTPARTS ya admite pedir un rango de bytes arbitrario
+        -no solo el fichero completo desde 0-, así que no hace falta
+        tocar el protocolo, solo acotar el bucle de
+        `_client_transfer_loop` a este tramo en vez de a
+        `download.size_bytes` completo. v1: solo fuentes directamente
+        alcanzables (HighID) encontradas vía servidor/Kad -sin el plan
+        B de callback para LowID que sí tiene `start_download`, ni
+        colas de espera reales-, y todo-o-nada: si ninguna fuente
+        acepta el tramo, se lanza una excepción sin repartir de nuevo
+        entre las redes que sí funcionaron."""
+        file_hash_hex, size_str, _title = result.source_id.split(":::", 2)
+        file_hash = bytes.fromhex(file_hash_hex)
+
+        candidates: list[tuple[str, int]] = []
+        if self._server_writer is not None:
+            for cid, port in await self._get_sources_from_server(file_hash, timeout=15.0):
+                if cid >= HIGH_ID_THRESHOLD:
+                    candidates.append((socket.inet_ntoa(struct.pack("<I", cid)), port))
+        if self._kad_contacts:
+            candidates.extend(await self._kad_search_sources(file_hash, int(size_str), timeout=15.0))
+
+        if not candidates:
+            raise RuntimeError("eD2k: no se encontraron fuentes directamente alcanzables (ni por servidor ni por Kad)")
+
+        last_error: Exception | str | None = None
+        for ip, port in candidates:
+            try:
+                ok = await self._download_range_from_source(ip, port, file_hash, out_path,
+                                                               range_start, range_end, on_progress)
+            except (OSError, asyncio.TimeoutError, ConnectionError, struct.error) as e:
+                last_error = e
+                ok = False
+            if ok:
+                return
+        raise RuntimeError(f"eD2k: ninguna fuente aceptó el tramo pedido (último error: {last_error})")
+
+    async def _download_range_from_source(self, ip: str, port: int, file_hash: bytes, out_path: str,
+                                             range_start: int, range_end: int,
+                                             on_progress: Callable[[int], None] | None,
+                                             timeout: float = 20.0) -> bool:
+        try:
+            reader, writer = await self._open_peer_connection(ip, port, timeout)
+        except (OSError, asyncio.TimeoutError, ObfuscationError, asyncio.IncompleteReadError):
+            return False
+        try:
+            writer.write(build_tcp_packet(OP_EDONKEYPROT, OP_HELLO, self._build_hello_payload(is_answer=False)))
+            await writer.drain()
+            protocol, opcode, payload = await read_tcp_packet(reader, timeout=timeout)
+            if opcode != OP_HELLOANSWER:
+                return False
+
+            writer.write(build_tcp_packet(OP_EDONKEYPROT, OP_SETREQFILEID, file_hash))
+            await writer.drain()
+            protocol, opcode, payload = await read_tcp_packet(reader, timeout=timeout)
+            if opcode == OP_FILEREQANSNOFIL:
+                return False
+
+            writer.write(build_tcp_packet(OP_EDONKEYPROT, OP_STARTUPLOADREQ, file_hash))
+            await writer.drain()
+            deadline = time.monotonic() + timeout
+            accepted = False
+            while time.monotonic() < deadline:
+                protocol, opcode, payload = await read_tcp_packet(reader, timeout=deadline - time.monotonic())
+                if opcode == OP_ACCEPTUPLOADREQ:
+                    accepted = True
+                    break
+                if opcode in (OP_QUEUERANK, OP_QUEUERANKING, OP_FILEREQANSNOFIL):
+                    return False  # v1: sin colas, se prueba la siguiente fuente
+            if not accepted:
+                return False
+
+            pos = range_start
+            with open(out_path, "r+b") as f:
+                while pos < range_end:
+                    end = min(pos + REQUEST_CHUNK, range_end)
+                    req = file_hash + struct.pack("<IIIIII", pos, 0, 0, end, 0, 0)
+                    writer.write(build_tcp_packet(OP_EDONKEYPROT, OP_REQUESTPARTS, req))
+                    await writer.drain()
+                    received_up_to = pos
+                    while received_up_to < end:
+                        protocol, opcode, payload = await read_tcp_packet(reader, timeout=30.0)
+                        if opcode != OP_SENDINGPART:
+                            return False
+                        r_start = struct.unpack_from("<I", payload, 16)[0]
+                        r_end = struct.unpack_from("<I", payload, 20)[0]
+                        data = payload[24:24 + (r_end - r_start)]
+                        await global_download_limiter.consume(len(data))
+                        f.seek(r_start)
+                        f.write(data)
+                        received_up_to = max(received_up_to, r_end)
+                        pos = received_up_to
+                        if on_progress:
+                            on_progress(pos - range_start)
+            return True
+        finally:
+            writer.close()
+
     async def _download_via_callback(self, client_id: int, file_hash: bytes,
                                        download: Download, dest_path: str, timeout: float = 20.0,
                                        resume_from: int = 0) -> bool:
