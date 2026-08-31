@@ -6749,3 +6749,51 @@ vivo). Nuevo test `tests/test_known_servers_live_merge.py` (4 casos:
 el conjunto en vivo aparece solo, se fusiona sin duplicar con la caché/
 lista externa, y conserva los metadatos de la lista pública cuando hay
 coincidencia). Suite completa de pytest en verde: 265/265.
+
+### Roadmap — tercera ronda (propuesta 2026-08-31)
+
+A raíz de una pregunta del usuario ("hay alguna forma de descargar a
+la vez de gnutella2, torrent y e2dk/kad??"), se le explicó que hoy las
+tres pueden descargar en paralelo sin bloquearse (arquitectura asyncio
+de un solo hilo, ver la restricción de diseño del proyecto), pero cada
+descarga es independiente por red — no existe una única descarga
+"agregada" que combine trozos del mismo contenido llegando a la vez
+desde varias redes, al estilo de lo que hacía algún cliente antiguo
+tipo MLDonkey. Se le explicó también por qué no se puede resolver
+"inventando" un hash común (sha1 = infohash = MD4): son tres
+definiciones incompatibles impuestas por cada protocolo real para
+poder hablar con otros clientes de esa red — y el caso del infohash es
+aún más de fondo, porque ni siquiera es un hash del contenido del
+fichero, sino del bencoded del `.torrent` (nombre, tamaño de pieza,
+hashes de cada pieza), así que no coincidiría con un SHA1 plano del
+mismo fichero aunque se usara el mismo algoritmo. A petición explícita
+del usuario ("sí, apúntalo en el DEVLOG y hazlo"), quedan anotados
+aquí como los dos siguientes puntos del backlog, con la misma regla de
+orden estricto que el resto (se implementan uno detrás de otro,
+documentando cada uno al completarlo):
+
+43. ⬜ Tabla de correlación local de hashes entre redes (sha1 ↔
+    infohash ↔ ed2k) — sin intentar igualar los propios hashes de cada
+    protocolo (imposible, ver más arriba), guardar en SQLite, para
+    cada contenido ya visto con más de un hash calculado (p.ej. un
+    fichero compartido que `SharedLibrary` ya hashea con SHA1 para G2 y
+    con MD4 para eMule, o uno descargado por BitTorrent del que
+    después se calculan también SHA1/eD2k), la tripleta de hashes que
+    le correspondan — solo para uso interno de la app, nunca expuesto
+    a las redes ni a otros clientes. Es el bloque base que hace falta
+    antes del punto 44: sin saber que dos resultados de redes
+    distintas son "el mismo fichero", no hay nada que combinar.
+44. ⬜ Descarga agregada multired (BitTorrent + Gnutella2 + eD2k/Kad a
+    la vez para un mismo contenido) — apoyándose en la tabla de
+    correlación del punto 43, un modo de descarga que no dependa de un
+    único backend/`SearchResult`, repartiendo rangos de bytes del
+    mismo fichero de destino entre las fuentes disponibles de varias
+    redes en paralelo (BitTorrent ya reparte por piezas, eD2k por
+    partes de ~9.5MB, y G2 ya soporta descarga por rango HTTP -mismo
+    mecanismo usado para pausar/reanudar, punto ya completado-, así
+    que las tres ya tienen la primitiva de "pedir bytes X-Y" necesaria
+    a nivel de protocolo). Requiere un gestor de descarga nuevo en
+    `core/download_manager.py` capaz de coordinar varios backends para
+    una sola fila de Transferencias, y su propia interfaz en la GUI
+    para elegir "combinar estas fuentes de varias redes" en vez de
+    iniciar una descarga normal de una sola.
