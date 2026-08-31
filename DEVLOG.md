@@ -6550,3 +6550,101 @@ tras dar tamaño al panel, comprobado con `git stash` que así sí falla
 contra el código original (reproduce el `KeyError: 'username'` exacto)
 y pasa contra el corregido. Suite completa de pytest en verde:
 256/256.
+
+### Arreglo: cerrar la app con torrents recién empezados los hacía volver a 0% al reabrirla
+
+Bug real reportado por el usuario: "estoy descargando dos torrents,
+dejo uno en 15% y otro en 2%, cierro p2p-total, vuelvo a entrar, están
+las descargas como las dejé, conecto la red bittorrent, las descargas
+se ponen a 0% y empiezan de nuevo". El historial persistido sí
+recordaba el porcentaje aproximado (por eso se veía bien nada más
+reabrir, sin conectar), pero al reconectar y reenganchar de verdad el
+progreso se perdía.
+
+Causa, en dos puntos que se combinaban:
+
+1. `TorrentBackend.disconnect()` lanzaba el `del session` -cuyo
+   destructor es quien hace el apagado "educado" de verdad, incluido
+   volcar a disco los bloques ya descargados que libtorrent todavía
+   tenía solo en el caché de escritura en memoria- en un hilo daemon
+   sin esperarlo nunca ("fire and forget"), justificado en el propio
+   comentario del código porque ese destructor puede tardar varios
+   segundos en la parte de red (DHT/LSD/UPnP/NAT-PMP) y no convenía
+   bloquear el cierre de la app por eso.
+2. `gui/main_window.py::closeEvent` programaba la desconexión de cada
+   red con `asyncio.ensure_future(...)` sin esperarla, y llamaba a
+   `QApplication.instance().quit()` casi inmediatamente después.
+
+Juntando ambas cosas: el proceso podía terminar antes de que el hilo
+daemon llegase siquiera a completar el volcado a disco de los bloques
+recién descargados (más probable cuanto más reciente el progreso,
+como el 15%/2% del reporte, con más datos aún sin flush) -en el
+recheck del siguiente arranque, esas piezas fallaban la comprobación
+de hash y se volvían a pedir enteras, viéndose como un reinicio
+completo de la descarga.
+
+Arreglado sin perder la razón de ser del código original (no bloquear
+el cierre de la app indefinidamente por una desconexión de red
+lenta): `disconnect()` llama primero a `session.pause()` (dispara el
+volcado) y ahora sí espera -con límite de tiempo, 10s, para cubrirse
+frente a una desconexión de red que se alargue- a que el destructor
+termine, vía `loop.run_in_executor` en vez de un `threading.Thread`
+suelto. `closeEvent` ya no dispara las desconexiones y sale
+inmediatamente: ahora espera (con su propio límite de tiempo, 15s) a
+que todas terminen antes de llamar a `QApplication.quit()`, en un
+nuevo método `_disconnect_all_and_quit()`.
+
+Nuevo test `tests/test_torrent_disconnect_flushes_progress.py`: siembra
+y descarga real por loopback (sin DHT/trackers, con
+`connect_peer`/`set_download_limit` para poder capturar un ~15%
+parcial), llama a `await backend.disconnect()` sin ningún `sleep`
+extra que disimulase la carrera real, y comprueba que un reenganche
+inmediato después conserva el progreso. Confirmado con `git stash`
+que reproduce el bug de verdad contra el código original (pérdida
+real de bytes ya descargados en el recheck, no una suposición) y pasa
+contra el corregido. Suite completa de pytest en verde: 257/257.
+
+### Verificación: pérdida de progreso entre sesiones en las otras cuatro redes
+
+A raíz del bug de BitTorrent de más arriba, petición explícita del
+usuario: "verifica que las 5 redes no tengan pérdidas de datos entre
+sesiones". Se revisaron `disconnect()` y la ruta de escritura a disco
+de Soulseek, DC++, Gnutella2 y eMule/Kad.
+
+Conclusión: ninguna de las cuatro comparte la causa raíz del bug de
+BitTorrent. Aquel bug era muy específico de libtorrent -una librería
+nativa en C++ con su propio caché de escritura interno, invisible para
+Python y el sistema operativo, que solo se vuelca a disco de forma
+síncrona en el destructor de `lt.session`, lanzado además en un hilo
+"fire and forget" nunca esperado-. Las otras cuatro redes escriben
+cada trozo recibido directamente con `f.write(chunk)` de Python sobre
+un fichero abierto con `open()`: esos bytes pasan a estar en manos del
+caché de páginas del propio sistema operativo, que sobrevive a la
+muerte del proceso (incluso a un `SIGKILL` en seco, sin ninguna
+oportunidad de ejecutar código de limpieza) porque es el SO, no el
+proceso que muere, quien decide cuándo los vuelca a disco de verdad.
+Ninguna de las cuatro llama a nada parecido a un `del session` en
+otro hilo sin esperarlo. El punto de retomada tras reenganchar tras
+un reinicio también es sólido en las cuatro: Soulseek y Gnutella2 usan
+`os.path.getsize(out_path)` (la verdad real en disco, inmune a
+cualquier contador desincronizado); DC++ y eMule usan el contador
+`download.downloaded_bytes` persistido, pero el orden del código
+(`f.write(...)` siempre antes de actualizar ese contador y notificar)
+garantiza que ese valor nunca pueda ir por delante de lo realmente
+escrito.
+
+En vez de fiarse solo de la lectura del código, se validó
+empíricamente con el caso más agresivo posible -mucho peor que cerrar
+la app de forma normal- para Soulseek (representativo del mismo patrón
+de escritura que comparten las otras tres): nuevo test
+`tests/test_soulseek_sigkill_survives_progress.py`, que lanza en un
+proceso hijo aparte una descarga real por loopback usando
+`SoulseekBackend._handle_incoming_file_connection` y, al llegar a
+~15%, lo mata con `SIGKILL` (sin ningún `finally` ni oportunidad de
+limpieza). El contenido que queda en disco se comprueba correcto byte
+a byte contra el original, sin huecos ni corrupción -la única pérdida
+observada es la esperable por buffering del último trozo aún no
+volcado (unos pocos KB, un problema de rendimiento menor, nada que ver
+con la pérdida total de progreso que sí sufría BitTorrent-. No se
+encontró ningún bug nuevo en ninguna de las cuatro redes. Suite
+completa de pytest en verde: 258/258.

@@ -662,21 +662,44 @@ class MainWindow(QMainWindow):
         self._watch_folder_manager.stop()
         self._bandwidth_scheduler.stop()
         self._remote_control_server.stop()
-        for network in self._connection_manager.connected_networks():
-            asyncio.ensure_future(self._connection_manager.disconnect_network(network))
+        networks = self._connection_manager.connected_networks()
         if self._tray_icon is not None:
             self._tray_icon.hide()
         super().closeEvent(event)
 
+        # Bug real reportado por el usuario: cerrar la app con torrents
+        # recién empezados (15%, 2%...) los hacía volver a 0% al
+        # reabrirla. Antes, las desconexiones se lanzaban con
+        # `ensure_future` sin esperarlas ("fire and forget") y
+        # `QApplication.quit()` se llamaba a continuación de inmediato
+        # -así que el volcado a disco que hace `TorrentBackend.disconnect()`
+        # (ver ese fichero) podía no llegar a completarse antes de que
+        # el proceso terminase de verdad. Ahora se espera (con límite de
+        # tiempo, por si alguna red tarda mucho en desconectar del
+        # todo) a que todas las desconexiones terminen antes de salir.
+        #
         # Qt normalmente cierra la app solo al cerrarse la última ventana
         # visible (quitOnLastWindowClosed), pero deja de hacerlo si la
         # ventana ya se había ocultado antes con hide() -exactamente lo
         # que pasa al minimizar a la bandeja y salir después desde su
         # menú contextual, con la ventana ya oculta en ese momento-.
-        # Confirmado con un caso aislado: sin este quit() explícito,
-        # app.exec()/loop.run_forever() no vuelve nunca tras ese ciclo, y
-        # el proceso se queda vivo en memoria aunque el icono desaparezca
-        # de la bandeja. Se llama siempre en la rama de cierre real (no en
-        # la de "minimizar a la bandeja", que hace `event.ignore()` y
-        # vuelve antes de llegar aquí).
+        # Confirmado con un caso aislado: sin el `quit()` explícito de
+        # `_disconnect_all_and_quit`, app.exec()/loop.run_forever() no
+        # vuelve nunca tras ese ciclo, y el proceso se queda vivo en
+        # memoria aunque el icono desaparezca de la bandeja. Se llama
+        # siempre en la rama de cierre real (no en la de "minimizar a la
+        # bandeja", que hace `event.ignore()` y vuelve antes de llegar
+        # aquí).
+        asyncio.ensure_future(self._disconnect_all_and_quit(networks))
+
+    async def _disconnect_all_and_quit(self, networks: list[Network]) -> None:
+        tasks = [
+            asyncio.ensure_future(self._connection_manager.disconnect_network(network))
+            for network in networks
+        ]
+        if tasks:
+            try:
+                await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=15.0)
+            except asyncio.TimeoutError:
+                pass
         QApplication.instance().quit()

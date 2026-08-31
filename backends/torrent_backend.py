@@ -23,7 +23,6 @@ import asyncio
 import json
 import os
 import re
-import threading
 import time
 import urllib.parse
 from typing import Callable
@@ -307,14 +306,37 @@ class TorrentBackend(NetworkBackend):
         self._active.clear()
         self._pending.clear()
         if session is not None:
-            # El destructor de `lt.session` hace un apagado "educado" de
-            # DHT/LSD/UPnP/NAT-PMP con idas y vueltas de red que pueden
-            # tardar varios segundos (a veces bastantes más), bloqueando
-            # de forma síncrona el hilo que lo llame. Se destruye en un
-            # hilo daemon aparte para que cerrar la app nunca se quede
-            # esperando a que termine (al morir el proceso, el hilo se
-            # descarta sin más, sin dejarlo "zombi").
-            threading.Thread(target=_destroy_session, args=(session,), daemon=True).start()
+            # Bug real reportado por el usuario: cerrar la app con
+            # descargas recién empezadas (15%, 2%...) hacía que, al
+            # reabrir, volvieran a 0% y arrancasen de cero en vez de
+            # retomarse. Causa: `session.pause()` es lo que hace que
+            # libtorrent vuelque a disco los bloques ya descargados que
+            # todavía tenía solo en el caché de escritura en memoria -y
+            # el `del session` de aquí abajo, cuyo destructor hace ese
+            # volcado de forma síncrona, se lanzaba en un hilo daemon
+            # sin esperarlo nunca ("fire and forget"), justo antes de
+            # que `gui/main_window.py` llamase a `QApplication.quit()`.
+            # Si el proceso terminaba antes de que ese hilo diera
+            # tiempo a completar el volcado (razonablemente probable,
+            # dado que ese `quit()` es casi inmediato), el hilo daemon
+            # se descartaba a medias y ese progreso reciente se perdía
+            # sin remedio -en el recheck del siguiente arranque, esas
+            # piezas fallaban la comprobación de hash y se volvían a
+            # pedir enteras. Ahora se llama a `pause()` primero y se
+            # espera (con límite de tiempo, por si la desconexión de
+            # red de verdad -DHT/LSD/UPnP- se alarga) a que el propio
+            # destructor termine antes de devolver el control, para que
+            # quien llame a `disconnect()` (en última instancia,
+            # `closeEvent` antes de cerrar la app) no siga adelante
+            # hasta que el volcado a disco esté garantizado.
+            session.pause()
+            loop = asyncio.get_event_loop()
+            try:
+                await asyncio.wait_for(
+                    loop.run_in_executor(None, _destroy_session, session), timeout=10.0
+                )
+            except asyncio.TimeoutError:
+                pass
 
     async def is_connected(self) -> bool:
         return self._session is not None
