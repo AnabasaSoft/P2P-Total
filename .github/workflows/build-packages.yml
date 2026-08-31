@@ -179,11 +179,26 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release create "${GITHUB_REF#refs/tags/}" \
-            artifacts/linux-packages/* \
-            artifacts/linux-flatpak/* \
-            artifacts/windows-installer/* \
-            artifacts/macos-dmg/* \
-            --repo "${GITHUB_REPOSITORY}" \
-            --title "P2P Total ${{ needs.version.outputs.version }}" \
-            --generate-notes
+          TAG="${GITHUB_REF#refs/tags/}"
+          # Reintentar el workflow (p.ej. tras un fallo en un job anterior)
+          # no debe romperse solo porque el release ya se creó en un
+          # intento previo: si ya existe, se suben/reemplazan los
+          # artefactos en vez de volver a crearlo.
+          if gh release view "$TAG" --repo "${GITHUB_REPOSITORY}" >/dev/null 2>&1; then
+            gh release upload "$TAG" \
+              artifacts/linux-packages/* \
+              artifacts/linux-flatpak/* \
+              artifacts/windows-installer/* \
+              artifacts/macos-dmg/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --clobber
+          else
+            gh release create "$TAG" \
+              artifacts/linux-packages/* \
+              artifacts/linux-flatpak/* \
+              artifacts/windows-installer/* \
+              artifacts/macos-dmg/* \
+              --repo "${GITHUB_REPOSITORY}" \
+              --title "P2P Total ${{ needs.version.outputs.version }}" \
+              --generate-notes
+          fi
