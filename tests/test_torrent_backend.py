@@ -20,6 +20,7 @@ from backends.torrent_backend import (
     _to_magnet,
     build_torrent_file,
 )
+from core import database
 from core.models import Download, DownloadState, Network
 
 _INFOHASH = "0123456789abcdef0123456789abcdef01234567"[:40]
@@ -328,6 +329,39 @@ async def test_create_torrent_writes_file_and_starts_seeding(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_create_torrent_correlates_hash_with_infohash(tmp_path):
+    """Punto 43 del backlog: el contenido de un torrent de un solo
+    archivo recién creado ya está en disco -no hace falta esperar a
+    ninguna descarga-, así que se aprovecha para calcular también su
+    SHA1/eD2k y guardar la correlación con su infohash."""
+    database.init_db()
+    source = tmp_path / "compartido.bin"
+    source.write_bytes(b"x" * 50000)
+    dest_torrent = tmp_path / "compartido.torrent"
+
+    backend = TorrentBackend()
+    await backend.connect()
+    try:
+        download = await backend.create_torrent(str(source), str(dest_torrent))
+        entry = backend._find_entry(download)
+        infohash = entry["handle"].info_hash().to_bytes()
+
+        for _ in range(50):
+            correlated = database.find_hash_correlation(infohash=infohash)
+            if correlated is not None:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            pytest.fail("La correlación de hashes no se guardó a tiempo")
+
+        assert correlated["size_bytes"] == 50000
+        assert correlated["sha1"] is not None
+        assert correlated["ed2k"] is not None
+    finally:
+        await backend.disconnect()
+
+
+@pytest.mark.asyncio
 async def test_pause_download_stays_paused_across_poll_ticks(tmp_path):
     """Punto 38: bug real descubierto al implementar el límite de ratio/
     tiempo de siembra. Sin `unset_flags(auto_managed)`, el gestor de cola
@@ -412,10 +446,41 @@ class _FakeStatus:
         self.errc = lt.error_code()
 
 
+class _FakeTorrentInfo:
+    """Sustituto mínimo de `lt.torrent_info` para probar el hook de
+    correlación del punto 43 dentro de `_poll_loop` sin depender de una
+    descarga real completada por libtorrent."""
+
+    def __init__(self, num_files: int, name: str = "contenido.bin", total_size: int = 0):
+        self._num_files = num_files
+        self._name = name
+        self._total_size = total_size
+
+    def num_files(self):
+        return self._num_files
+
+    def name(self):
+        return self._name
+
+    def total_size(self):
+        return self._total_size
+
+
+class _FakeInfoHash:
+    def __init__(self, raw: bytes):
+        self._raw = raw
+
+    def to_bytes(self):
+        return self._raw
+
+
 class _FakeHandle:
-    def __init__(self, status: _FakeStatus):
+    def __init__(self, status: _FakeStatus, torrent_info: "_FakeTorrentInfo | None" = None,
+                 infohash_bytes: bytes = b"f" * 20):
         self._status = status
         self.paused_called = False
+        self._torrent_info = torrent_info
+        self._infohash_bytes = infohash_bytes
 
     def status(self):
         return self._status
@@ -431,13 +496,19 @@ class _FakeHandle:
         self._status.paused = True
 
     def info_hash(self):
-        return "fakehash"
+        return _FakeInfoHash(self._infohash_bytes)
+
+    def torrent_file(self):
+        # Por defecto, sin metadatos de torrent -como un handle real
+        # antes de terminar de negociar un magnet-: el hook de
+        # correlación del punto 43 debe ignorarlo sin fallar.
+        return self._torrent_info
 
 
-def _fake_download() -> Download:
+def _fake_download(dest_path: str = "/tmp") -> Download:
     return Download(
         id=None, network=Network.TORRENT, title="x",
-        source_id="magnet:?xt=urn:btih:" + _INFOHASH, dest_path="/tmp",
+        source_id="magnet:?xt=urn:btih:" + _INFOHASH, dest_path=dest_path,
     )
 
 
@@ -494,5 +565,64 @@ async def test_seed_limits_disabled_by_default_do_not_pause():
         await asyncio.sleep(1.5)
 
         assert handle.paused_called is False
+    finally:
+        await backend.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_correlates_completed_single_file_download(tmp_path):
+    """Punto 43 del backlog: cuando un torrent de un solo archivo
+    -descargado de verdad de otros peers, no creado localmente- llega
+    por primera vez a `is_seeding`, `_poll_loop` calcula también su
+    SHA1/eD2k y lo correla con su infohash."""
+    database.init_db()
+    content = tmp_path / "contenido.bin"
+    content.write_bytes(b"y" * 30000)
+    infohash = b"c" * 20
+
+    backend = TorrentBackend()
+    await backend.connect()
+    try:
+        status = _FakeStatus(total_wanted=30000, state=lt.torrent_status.states.seeding)
+        torrent_info = _FakeTorrentInfo(num_files=1, name="contenido.bin", total_size=30000)
+        handle = _FakeHandle(status, torrent_info=torrent_info, infohash_bytes=infohash)
+        download = _fake_download(dest_path=str(tmp_path))
+        backend._active["fakehash"] = {"handle": handle, "download": download}
+
+        for _ in range(50):
+            correlated = database.find_hash_correlation(infohash=infohash)
+            if correlated is not None:
+                break
+            await asyncio.sleep(0.1)
+        else:
+            pytest.fail("La correlación de hashes no se guardó a tiempo")
+
+        assert correlated["size_bytes"] == 30000
+        assert correlated["sha1"] is not None
+        assert correlated["ed2k"] is not None
+    finally:
+        await backend.disconnect()
+
+
+@pytest.mark.asyncio
+async def test_poll_loop_skips_correlation_for_multi_file_torrents(tmp_path):
+    """No hay una única correspondencia limpia "un archivo = un
+    contenido" para un torrent de varios archivos, así que no se
+    intenta correlar ninguno de ellos."""
+    database.init_db()
+    infohash = b"m" * 20
+
+    backend = TorrentBackend()
+    await backend.connect()
+    try:
+        status = _FakeStatus(total_wanted=30000, state=lt.torrent_status.states.seeding)
+        torrent_info = _FakeTorrentInfo(num_files=2, name="carpeta", total_size=30000)
+        handle = _FakeHandle(status, torrent_info=torrent_info, infohash_bytes=infohash)
+        download = _fake_download(dest_path=str(tmp_path))
+        backend._active["fakehash"] = {"handle": handle, "download": download}
+
+        await asyncio.sleep(1.5)
+
+        assert database.find_hash_correlation(infohash=infohash) is None
     finally:
         await backend.disconnect()

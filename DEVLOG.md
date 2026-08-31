@@ -6772,7 +6772,7 @@ aquí como los dos siguientes puntos del backlog, con la misma regla de
 orden estricto que el resto (se implementan uno detrás de otro,
 documentando cada uno al completarlo):
 
-43. ⬜ Tabla de correlación local de hashes entre redes (sha1 ↔
+43. ✅ Tabla de correlación local de hashes entre redes (sha1 ↔
     infohash ↔ ed2k) — sin intentar igualar los propios hashes de cada
     protocolo (imposible, ver más arriba), guardar en SQLite, para
     cada contenido ya visto con más de un hash calculado (p.ej. un
@@ -6797,3 +6797,71 @@ documentando cada uno al completarlo):
     una sola fila de Transferencias, y su propia interfaz en la GUI
     para elegir "combinar estas fuentes de varias redes" en vez de
     iniciar una descarga normal de una sola.
+
+### Punto 43 del backlog: tabla de correlación local de hashes entre redes
+
+Nueva tabla SQLite `hash_correlation` (`core/database.py`): una fila
+por contenido con `size_bytes` + los hashes que se conozcan de él
+(`sha1`, `ed2k`, `infohash`, cualquiera puede faltar). Dos funciones
+nuevas la manejan:
+
+- `record_hash_correlation(size_bytes, sha1=, ed2k=, infohash=)`: busca
+  una fila ya existente por tamaño + coincidencia en cualquiera de los
+  hashes recibidos y la completa con los que le faltaban; si no
+  encuentra ninguna, crea una fila nueva. Nunca sobrescribe un hash ya
+  guardado con uno distinto -si no coincide, es que `size_bytes` ha
+  coincidido por casualidad entre dos contenidos distintos, no el
+  mismo fichero, así que esa fila se deja tal cual.
+- `find_hash_correlation(sha1=, ed2k=, infohash=)`: busca por
+  cualquiera de los tres que se conozca y devuelve la tripleta
+  completa (`None` los que aún no se hayan calculado), o `None` si ese
+  contenido nunca se ha correlado.
+
+Dos puntos de la app quedan enganchados para alimentar la tabla sin
+recalcular nada de más:
+
+- `SharedLibrary.rescan()` (`core/sharing.py`): en cuanto un fichero
+  compartido termina un rescan con SHA1 y eD2k ambos ya conocidos
+  -típicamente porque dos redes distintas (G2 y eMule) comparten la
+  misma carpeta y cada una pidió un hash distinto en momentos
+  distintos-, se correla. Solo se dispara en ese instante concreto, no
+  en cada rescan de un fichero sin cambios, para no pagar una consulta
+  a SQLite de más por fichero en cada reconexión.
+- `TorrentBackend` (`backends/torrent_backend.py`): nuevo
+  `hash_file_for_correlation()` en `core/sharing.py` -reutiliza el
+  mismo `_HashWorker` de proceso aparte que ya usa `SharedLibrary`, vía
+  `run_in_daemon_thread`, para no competir por el GIL con el event
+  loop mientras hashea- calcula el SHA1/eD2k de un fichero de un
+  torrent y lo correla con su infohash. Se dispara en dos sitios: al
+  crear un torrent nuevo (`create_torrent`, contenido ya en disco, sin
+  esperar a ninguna descarga) y la primera vez que una descarga real
+  llega a `is_seeding` en `_poll_loop` (contenido recién completado).
+  En ambos casos, solo para torrents de un único archivo
+  (`info.num_files() == 1`) -con varios no hay una única
+  correspondencia limpia "un archivo = un contenido" a la que asociar
+  un solo SHA1/eD2k-, y solo una vez por infohash (`self._correlated`,
+  igual que `self._seed_started_at`), para no rehashear el mismo
+  contenido -potencialmente grande- en cada vuelta de `_poll_loop`
+  (cada 1 segundo) mientras sigue en estado de siembra.
+
+Validado con 8 tests nuevos: `tests/test_database.py` (registrar y
+buscar por cualquiera de los tres hashes, completar una fila existente
+con un hash que faltaba, no sobrescribir un hash distinto ya guardado,
+`None` si nunca se ha visto), un caso nuevo en `tests/test_sharing.py`
+(la correlación aparece justo tras el segundo `rescan()` que completa
+el eD2k que faltaba) y tres en `tests/test_torrent_backend.py`
+(correlación inmediata al crear un torrent de un solo archivo,
+correlación al completar una descarga real vía el hook de
+`_poll_loop`, y que un torrent de varios archivos se salta sin
+intentar correlar nada). De paso, escribir estos tests destapó que los
+`_FakeHandle`/`_FakeStatus` ya existentes en `test_torrent_backend.py`
+para los tests de límite de siembra no tenían `torrent_file()`
+-`_poll_loop` ahora lo llama siempre que hay un torrent en estado de
+siembra-, lo que rompía esos tests con una `AttributeError` silenciosa
+que mataba la tarea de `_poll_loop` entera para el resto del test;
+arreglado añadiendo ese método (con `None` por defecto) al doble de
+prueba, no al código de producción. Suite completa de pytest en verde:
+273/273 (272 con un fallo puntual por timing bajo carga en
+`test_torrent_disconnect_flushes_progress.py`, que pasa limpio tanto
+en solitario como al repetir la suite entera -no relacionado con este
+cambio-).

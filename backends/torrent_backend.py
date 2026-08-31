@@ -25,16 +25,19 @@ import os
 import re
 import time
 import urllib.parse
+from pathlib import Path
 from typing import Callable
 
 import libtorrent as lt
 
+from core import database
 from core.async_utils import run_in_daemon_thread
 from core.backend_base import NetworkBackend
 from core.http_client import http_get
 from core.ip_filter import ip_filter
 from core.models import Download, DownloadState, Network, SearchResult
 from core.proxy import ProxyConfig
+from core.sharing import hash_file_for_correlation
 from core.stats_tracker import stats_tracker
 
 _INFOHASH_RE = re.compile(r"^[a-fA-F0-9]{40}$")
@@ -240,6 +243,10 @@ class TorrentBackend(NetworkBackend):
         # aplicar de inmediato al añadir el torrent). `_poll_loop` la
         # consume en cuanto `has_metadata` pasa a True.
         self._pending_file_priorities: dict[str, dict[int, int]] = {}
+        # Punto 43 del backlog: info_hash ya correlados con su SHA1/eD2k
+        # (ver `_correlate_single_file`), para no volver a hashear el
+        # mismo contenido en cada reconexión.
+        self._correlated: set[str] = set()
 
     # ---- ciclo de vida ----
 
@@ -526,7 +533,33 @@ class TorrentBackend(NetworkBackend):
             state=DownloadState.SEARCHING_SOURCES,
         )
         self._active[info_hash] = {"handle": handle, "download": download}
+        if info.num_files() == 1:
+            # El contenido ya está en disco, sin esperar a ninguna
+            # descarga: se puede correlar (punto 43 del backlog) de
+            # inmediato, en segundo plano.
+            self._correlated.add(info_hash)
+            asyncio.ensure_future(self._correlate_single_file(
+                Path(source_path), info.total_size(), handle.info_hash().to_bytes(),
+            ))
         return download
+
+    async def _correlate_single_file(self, path: Path, size: int, infohash: bytes) -> None:
+        """Punto 43 del backlog: calcula también el SHA1/eD2k de este
+        contenido -en el mismo proceso trabajador aparte que usa
+        `SharedLibrary`, vía `run_in_daemon_thread` para no bloquear el
+        event loop mientras espera el resultado- y lo correla con su
+        infohash. Solo tiene sentido para torrents de un único archivo:
+        con varios no hay una única correspondencia limpia "un archivo
+        = un contenido" a la que asociar un solo SHA1/eD2k, así que esos
+        se quedan fuera (`info.num_files() == 1`, comprobado por quien
+        llama)."""
+        hashed = await run_in_daemon_thread(
+            hash_file_for_correlation, path, name="torrent-hash-correlation",
+        )
+        if hashed is None:
+            return
+        sha1, ed2k = hashed
+        database.record_hash_correlation(size, sha1=sha1, ed2k=ed2k, infohash=infohash)
 
     async def reattach_download(self, download: Download) -> None:
         """Reengancha un torrent tras reiniciar la app: la sesión de
@@ -917,6 +950,21 @@ class TorrentBackend(NetworkBackend):
                         lt.torrent_status.states.finished,
                         lt.torrent_status.states.seeding,
                     )
+                    if is_seeding and info_hash not in self._correlated:
+                        # Punto 43 del backlog: contenido ya completo en
+                        # disco por primera vez -si además es un torrent
+                        # de un solo archivo, se aprovecha para
+                        # correlarlo con su SHA1/eD2k en segundo plano
+                        # (mismo caso que `create_torrent`, pero aquí
+                        # para contenido descargado de verdad de otros
+                        # peers en vez de compartido desde el principio).
+                        self._correlated.add(info_hash)
+                        torrent_info = handle.torrent_file()
+                        if torrent_info is not None and torrent_info.num_files() == 1:
+                            content_path = Path(d.dest_path) / torrent_info.name()
+                            asyncio.ensure_future(self._correlate_single_file(
+                                content_path, torrent_info.total_size(), handle.info_hash().to_bytes(),
+                            ))
                     if is_seeding and not status.paused:
                         started_at = self._seed_started_at.setdefault(info_hash, time.time())
                         ratio = status.all_time_upload / max(status.total_wanted, 1)

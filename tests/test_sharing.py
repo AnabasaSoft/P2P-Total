@@ -13,6 +13,7 @@ import time
 
 import pytest
 
+from core import database
 from core import sharing as sharing_module
 from core.sharing import SharedLibrary
 
@@ -80,6 +81,25 @@ def test_rescan_can_add_missing_hash_later_reusing_cache(shared_file):
     sf = lib.list_files()[0]
     assert sf.sha1 == sha1_only
     assert sf.ed2k != b""
+
+
+def test_rescan_records_hash_correlation_once_both_hashes_are_known(shared_file):
+    """Punto 43 del backlog: en cuanto un fichero compartido tiene tanto
+    SHA1 como eD2k -aunque se hayan calculado en rescans separados, como
+    en `test_rescan_can_add_missing_hash_later_reusing_cache`- queda
+    correlado para uso interno, disponible vía
+    `database.find_hash_correlation()`."""
+    root, _f = shared_file
+    lib = SharedLibrary([str(root)])
+    lib.rescan(need_ed2k=False)
+    sha1_only = lib.list_files()[0].sha1
+    assert database.find_hash_correlation(sha1=sha1_only) is None
+
+    lib.rescan(need_sha1=False, need_ed2k=True)
+    sf = lib.list_files()[0]
+    correlated = database.find_hash_correlation(sha1=sf.sha1)
+    assert correlated is not None
+    assert correlated["ed2k"] == sf.ed2k
 
 
 def test_hash_cache_persists_across_instances(shared_file, monkeypatch):

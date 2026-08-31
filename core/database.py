@@ -92,6 +92,13 @@ CREATE TABLE IF NOT EXISTS shared_hash_cache (
     has_sha1 INTEGER NOT NULL DEFAULT 0,
     has_ed2k INTEGER NOT NULL DEFAULT 0
 );
+CREATE TABLE IF NOT EXISTS hash_correlation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    size_bytes INTEGER NOT NULL,
+    sha1 BLOB,
+    ed2k BLOB,
+    infohash BLOB
+);
 """
 
 
@@ -466,6 +473,85 @@ def prune_shared_hash_cache(valid_paths: set[str]) -> None:
         stale = [row["path"] for row in rows if row["path"] not in valid_paths]
         if stale:
             conn.executemany("DELETE FROM shared_hash_cache WHERE path = ?", [(p,) for p in stale])
+
+
+# ---- Correlación local de hashes entre redes (punto 43 del backlog) ----
+#
+# BitTorrent (infohash), Gnutella2 (SHA1) y eD2k/eMule (MD4) identifican
+# el mismo contenido con hashes completamente distintos e incompatibles
+# entre sí -no hay forma de unificarlos: son definiciones impuestas por
+# cada protocolo real (y el infohash ni siquiera es un hash del
+# contenido del fichero, sino del bencoded del .torrent). Esta tabla no
+# lo intenta: solo guarda, para el contenido que la propia app ya ha
+# tenido ocasión de hashear con más de un algoritmo a la vez (un
+# fichero compartido con SHA1 y eD2k ya calculados por
+# `SharedLibrary.rescan()`, o el contenido de un torrent de un solo
+# archivo del que también se calculan SHA1/eD2k, ver
+# `TorrentBackend`), la tripleta de hashes que le corresponden -de uso
+# puramente interno, nunca se envía a ninguna red. Es el bloque base
+# para el punto 44 (descarga agregada multired): sin saber que dos
+# resultados de redes distintas son "el mismo fichero", no hay nada
+# que combinar.
+
+def record_hash_correlation(size_bytes: int, *, sha1: bytes | None = None,
+                              ed2k: bytes | None = None, infohash: bytes | None = None) -> None:
+    """Busca una fila ya existente para este contenido -mismo
+    `size_bytes` y coincidencia en cualquiera de los hashes que se
+    pasen aquí y ya se conozcan- y la completa con los que le
+    faltasen; si no hay ninguna, crea una fila nueva. Nunca sobrescribe
+    un hash ya guardado con uno distinto: si el nuevo no coincide con
+    el que ya había, `size_bytes` ha coincidido por casualidad entre
+    dos contenidos distintos, no es el mismo fichero, así que esa fila
+    se deja tal cual y no se actualiza."""
+    with get_connection() as conn:
+        row = None
+        if sha1 is not None:
+            row = conn.execute(
+                "SELECT * FROM hash_correlation WHERE size_bytes = ? AND sha1 = ?", (size_bytes, sha1)
+            ).fetchone()
+        if row is None and ed2k is not None:
+            row = conn.execute(
+                "SELECT * FROM hash_correlation WHERE size_bytes = ? AND ed2k = ?", (size_bytes, ed2k)
+            ).fetchone()
+        if row is None and infohash is not None:
+            row = conn.execute(
+                "SELECT * FROM hash_correlation WHERE size_bytes = ? AND infohash = ?", (size_bytes, infohash)
+            ).fetchone()
+
+        if row is None:
+            conn.execute(
+                "INSERT INTO hash_correlation (size_bytes, sha1, ed2k, infohash) VALUES (?, ?, ?, ?)",
+                (size_bytes, sha1, ed2k, infohash),
+            )
+            return
+
+        new_sha1 = sha1 if (sha1 is not None and row["sha1"] is None) else row["sha1"]
+        new_ed2k = ed2k if (ed2k is not None and row["ed2k"] is None) else row["ed2k"]
+        new_infohash = infohash if (infohash is not None and row["infohash"] is None) else row["infohash"]
+        conn.execute(
+            "UPDATE hash_correlation SET sha1 = ?, ed2k = ?, infohash = ? WHERE id = ?",
+            (new_sha1, new_ed2k, new_infohash, row["id"]),
+        )
+
+
+def find_hash_correlation(*, sha1: bytes | None = None, ed2k: bytes | None = None,
+                            infohash: bytes | None = None) -> dict | None:
+    """Busca por cualquiera de los tres hashes que se conozca y, si el
+    contenido ya está correlado, devuelve `{"size_bytes", "sha1",
+    "ed2k", "infohash"}` con los otros dos (`None` los que no se hayan
+    llegado a calcular todavía). `None` si este contenido nunca se ha
+    correlado."""
+    with get_connection() as conn:
+        row = None
+        if sha1 is not None:
+            row = conn.execute("SELECT * FROM hash_correlation WHERE sha1 = ?", (sha1,)).fetchone()
+        if row is None and ed2k is not None:
+            row = conn.execute("SELECT * FROM hash_correlation WHERE ed2k = ?", (ed2k,)).fetchone()
+        if row is None and infohash is not None:
+            row = conn.execute("SELECT * FROM hash_correlation WHERE infohash = ?", (infohash,)).fetchone()
+    if row is None:
+        return None
+    return {"size_bytes": row["size_bytes"], "sha1": row["sha1"], "ed2k": row["ed2k"], "infohash": row["infohash"]}
 
 
 def get_network_stats_daily(days: int = 30) -> list[dict]:

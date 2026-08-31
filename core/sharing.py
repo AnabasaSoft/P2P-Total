@@ -185,6 +185,24 @@ class _HashWorker:
 _hash_worker = _HashWorker()
 
 
+def hash_file_for_correlation(path: Path) -> tuple[bytes, bytes] | None:
+    """Punto 43 del backlog: SHA1 + eD2k de un fichero cualquiera -no
+    necesariamente de una carpeta compartida, p.ej. el contenido de un
+    torrent de BitTorrent- para poder correlacionarlo con su infohash
+    en `database.record_hash_correlation()`. Reutiliza el mismo
+    `_hash_worker` de proceso aparte que ya usa `rescan()`, para no
+    competir por el GIL con lo que sea que el bucle de eventos esté
+    haciendo en ese momento (ver el porqué en `_HashWorker`); quien
+    llame a esto debe hacerlo con `run_in_daemon_thread`, no
+    directamente desde una corrutina, porque el propio `.get()` de la
+    cola bloquea de verdad mientras espera el resultado."""
+    hashed = _hash_worker.hash_file(path, need_sha1=True, need_ed2k=True)
+    if hashed is None:
+        return None
+    sha1, ed2k, _ed2k_parts = hashed
+    return sha1, ed2k
+
+
 class SharedLibrary:
     """Indexa en memoria una o varias carpetas compartidas. El índice
     se construye con `rescan()` (llamado al conectar cada backend que
@@ -338,6 +356,16 @@ class SharedLibrary:
                         if missing_ed2k:
                             ed2k, ed2k_parts, has_ed2k = h_ed2k, h_ed2k_parts, True
                         pending_db_writes.append((key, size, mtime_ns, sha1, ed2k, ed2k_parts, has_sha1, has_ed2k))
+                        # Punto 43 del backlog: en cuanto un fichero tiene
+                        # ambos hashes (recién calculado uno de los dos,
+                        # el otro ya en caché de una red que conectó
+                        # antes sobre esta misma SharedLibrary compartida
+                        # entre redes), queda correlado para uso interno
+                        # -solo aquí, no en cada rescan de un fichero sin
+                        # cambios, para no pagar una consulta a SQLite de
+                        # más por fichero en cada reconexión.
+                        if has_sha1 and has_ed2k:
+                            database.record_hash_correlation(size, sha1=sha1, ed2k=ed2k)
 
                     new_cache[key] = (size, mtime_ns, sha1, ed2k, ed2k_parts, has_sha1, has_ed2k)
                     rel = full.relative_to(root).as_posix()
