@@ -22,7 +22,7 @@ from core.bandwidth_scheduler import effective_limits_kbps
 from core.config import load_config
 from core.download_manager import DownloadManager
 from core.ip_filter import apply_config as apply_ip_filter_config
-from core.models import Network
+from core.models import REAL_NETWORKS, Network
 from core.rate_limiter import apply_global_limits
 from core.sharing import SharedLibrary
 from core.stats_tracker import stats_tracker
@@ -41,7 +41,7 @@ class ConnectionManager(QObject):
         super().__init__()
         self._download_manager = download_manager
         self._backends: dict[Network, NetworkBackend] = {}
-        self._statuses: dict[Network, str] = {n: STATUS_DISCONNECTED for n in Network}
+        self._statuses: dict[Network, str] = {n: STATUS_DISCONNECTED for n in REAL_NETWORKS}
         # Una única SharedLibrary compartida por las cuatro redes que
         # sirven ficheros (Soulseek/DC++/G2/eMule), en vez de una por
         # red: así el escaneo/hasheo de las carpetas compartidas (caro

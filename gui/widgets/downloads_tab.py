@@ -12,7 +12,7 @@ from PyQt6.QtWidgets import (
 )
 
 from core.download_manager import DownloadManager
-from core.models import Download, DownloadState, Network
+from core.models import REAL_NETWORKS, Download, DownloadState, Network, decode_combined_source_id
 from gui.connection_manager import STATUS_CONNECTED, ConnectionManager
 from gui.desktop_open import open_local_path
 from gui.i18n import t
@@ -31,6 +31,31 @@ from gui.widgets.torrent_files_dialog import TorrentFilesDialog
 # en cualquiera de estos tres estados "activos", no solo mientras ya
 # hay bytes bajando.
 _PAUSABLE_STATES = (DownloadState.QUEUED, DownloadState.SEARCHING_SOURCES, DownloadState.DOWNLOADING)
+
+
+def _aggregated_has_torrent(download: Download) -> bool:
+    """Punto 44 del backlog, fase 2: `AggregatedDownloadSession.pause()`/
+    `.resume()` rechazan de plano una descarga combinada que incluya
+    BitTorrent (ver `core/aggregated_download.py`), así que ofrecer
+    "Pausar" para ella en el menú -o desde "Pausar todo"- solo lleva a
+    un error que antes se tragaba en silencio (`asyncio.ensure_future`
+    sin manejo de excepción). Se decodifica el `source_id` combinado
+    -ligero, vive en `core/models.py` sin arrastrar backends- para
+    saberlo de antemano y no ofrecer la acción."""
+    if download.network != Network.AGGREGATED:
+        return False
+    try:
+        return Network.TORRENT in decode_combined_source_id(download.source_id)
+    except (ValueError, KeyError, TypeError):
+        return False
+
+
+def _is_pausable(download: Download, model) -> bool:
+    return (
+        download.state in _PAUSABLE_STATES
+        and model.is_network_connected(download.network)
+        and not _aggregated_has_torrent(download)
+    )
 
 
 class DownloadsTab(QWidget):
@@ -81,7 +106,7 @@ class DownloadsTab(QWidget):
         # una red, sus descargas seguían mostrando el estado
         # "Descargando"/"Buscando fuentes"/"En cola" persistido de la
         # última sesión conectada, lo cual es imposible sin conexión.
-        for network in Network:
+        for network in REAL_NETWORKS:
             self._model.set_network_connected(network, connection_manager.is_connected(network))
         connection_manager.status_changed.connect(self._on_network_status_changed)
 
@@ -96,7 +121,7 @@ class DownloadsTab(QWidget):
 
     def pause_all(self) -> None:
         for download in self._model.downloads_in_order():
-            if download.state in _PAUSABLE_STATES and self._model.is_network_connected(download.network):
+            if _is_pausable(download, self._model):
                 asyncio.ensure_future(self._manager.pause(download))
 
     def resume_all(self) -> None:
@@ -141,9 +166,7 @@ class DownloadsTab(QWidget):
         open_folder_action = speed_limit_action = torrent_files_action = None
         move_up_action = move_down_action = verify_action = None
         if downloads:
-            if any(
-                d.state in _PAUSABLE_STATES and self._model.is_network_connected(d.network) for d in downloads
-            ):
+            if any(_is_pausable(d, self._model) for d in downloads):
                 pause_action = menu.addAction(t("ctx_pause"))
             if any(
                 d.state == DownloadState.PAUSED and self._model.is_network_connected(d.network) for d in downloads
@@ -151,8 +174,15 @@ class DownloadsTab(QWidget):
                 resume_action = menu.addAction(t("ctx_resume"))
             if any(d.state not in (DownloadState.COMPLETED, DownloadState.CANCELLED) for d in downloads):
                 cancel_action = menu.addAction(t("ctx_cancel"))
-            if any(d.state == DownloadState.CANCELLED for d in downloads):
+            if any(
+                d.state == DownloadState.CANCELLED and d.network != Network.AGGREGATED for d in downloads
+            ):
+                # Una descarga agregada (punto 44, fase 2) no guarda
+                # progreso por red entre sesiones, así que "Iniciar"
+                # (retomar donde se quedó) no tiene sentido para ella —
+                # solo "Reiniciar" (desde cero), que sí soporta.
                 restart_action = menu.addAction(t("ctx_restart"))
+            if any(d.state == DownloadState.CANCELLED for d in downloads):
                 restart_from_scratch_action = menu.addAction(t("ctx_restart_from_scratch"))
             delete_action = menu.addAction(t("ctx_delete"))
             speed_limit_action = menu.addAction(t("ctx_speed_limit"))
@@ -188,7 +218,7 @@ class DownloadsTab(QWidget):
             return
         if action == pause_action:
             for download in downloads:
-                if download.state in _PAUSABLE_STATES and self._model.is_network_connected(download.network):
+                if _is_pausable(download, self._model):
                     asyncio.ensure_future(self._manager.pause(download))
         elif action == resume_action:
             for download in downloads:
@@ -199,7 +229,7 @@ class DownloadsTab(QWidget):
             self._confirm_and_cancel(cancellable)
         elif action == restart_action:
             for download in downloads:
-                if download.state == DownloadState.CANCELLED:
+                if download.state == DownloadState.CANCELLED and download.network != Network.AGGREGATED:
                     asyncio.ensure_future(self._manager.restart(download))
         elif action == restart_from_scratch_action:
             for download in downloads:

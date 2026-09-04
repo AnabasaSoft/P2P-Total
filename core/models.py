@@ -5,6 +5,7 @@ sus propias estructuras internas a estos modelos, para que el
 core y la GUI nunca tengan que saber qué protocolo hay detrás.
 """
 
+import json
 from dataclasses import dataclass, field
 from enum import Enum, auto
 from datetime import datetime
@@ -17,6 +18,20 @@ class Network(str, Enum):
     DCPP = "dcpp"
     GNUTELLA2 = "gnutella2"    # G2 — protocolo de árbol binario nativo
     EMULE = "emule"
+    # Red "virtual" del punto 44 (fase 2): no es una red real -no tiene
+    # backend, ni se conecta, ni se busca en ella- sino la marca que
+    # identifica a un `Download` cuyo `source_id` combina fuentes de
+    # varias redes reales a la vez (descarga agregada multired). Por
+    # eso queda fuera de `REAL_NETWORKS`: cualquier sitio del código
+    # que asuma "cada red es conectable/buscable" (menús, estadísticas
+    # por red, checkboxes de filtro de búsqueda...) debe recorrer
+    # `REAL_NETWORKS` en vez de la enumeración completa.
+    AGGREGATED = "aggregated"
+
+
+# Redes reales con backend propio (conectables, buscables): todo
+# `Network` salvo `AGGREGATED`, ver su comentario arriba.
+REAL_NETWORKS = (Network.TORRENT, Network.SOULSEEK, Network.DCPP, Network.GNUTELLA2, Network.EMULE)
 
 
 class DownloadState(str, Enum):
@@ -77,6 +92,49 @@ class Download:
         if not self.size_bytes:
             return 0.0
         return min(1.0, self.downloaded_bytes / self.size_bytes)
+
+
+# Punto 44 del backlog, fase 2: codificación del `source_id` de una
+# descarga agregada (`Network.AGGREGATED`), la única forma de que sus
+# fuentes por red sobrevivan a cerrar y reabrir la aplicación (no hay
+# tabla propia para esto, ver `core/aggregated_download.py`). Viven en
+# este módulo -y no en `core.aggregated_download`, que arrastra a
+# libtorrent en su cabecera- para que la GUI pueda decodificarlas
+# (p.ej. para saber si una descarga combinada concreta incluye
+# BitTorrent, y así ocultar "Pausar" para ella) sin acoplarse a los
+# backends concretos.
+_COMBINED_SOURCE_ID_SEP = "|||"
+
+
+def encode_combined_source_id(sources: "dict[Network, SearchResult]") -> str:
+    """Codifica las fuentes de una descarga agregada en el `source_id`
+    de su `Download` (`Network.AGGREGATED`)."""
+    payload = {
+        network.value: {
+            "title": result.title,
+            "size_bytes": result.size_bytes,
+            "source_id": result.source_id,
+            "seeds_or_sources": result.seeds_or_sources,
+            "extra": result.extra,
+            "alt_source_ids": result.alt_source_ids,
+        }
+        for network, result in sources.items()
+    }
+    return f"aggregated:{_COMBINED_SOURCE_ID_SEP}{json.dumps(payload)}"
+
+
+def decode_combined_source_id(source_id: str) -> "dict[Network, SearchResult]":
+    """Inversa de `encode_combined_source_id`."""
+    _, _, raw = source_id.partition(_COMBINED_SOURCE_ID_SEP)
+    payload = json.loads(raw)
+    return {
+        Network(network_value): SearchResult(
+            network=Network(network_value), title=data["title"], size_bytes=data["size_bytes"],
+            source_id=data["source_id"], seeds_or_sources=data["seeds_or_sources"],
+            extra=data["extra"], alt_source_ids=data["alt_source_ids"],
+        )
+        for network_value, data in payload.items()
+    }
 
 
 @dataclass

@@ -6783,7 +6783,7 @@ documentando cada uno al completarlo):
     a las redes ni a otros clientes. Es el bloque base que hace falta
     antes del punto 44: sin saber que dos resultados de redes
     distintas son "el mismo fichero", no hay nada que combinar.
-44. 🟡 Descarga agregada multired (BitTorrent + Gnutella2 + eD2k/Kad a
+44. ✅ Descarga agregada multired (BitTorrent + Gnutella2 + eD2k/Kad a
     la vez para un mismo contenido) — apoyándose en la tabla de
     correlación del punto 43, un modo de descarga que no dependa de un
     único backend/`SearchResult`, repartiendo rangos de bytes del
@@ -6794,12 +6794,13 @@ documentando cada uno al completarlo):
     que las tres ya tienen la primitiva de "pedir bytes X-Y" necesaria
     a nivel de protocolo). **v1 completada** (motor núcleo: primitivas
     de descarga por rango en los tres backends + coordinador +
-    verificación final, ver entrada de abajo); **pendiente una fase 2**
+    verificación final, ver entrada de abajo); **fase 2 completada**
     con la integración en `DownloadManager`/GUI (pausar/reanudar/
-    cancelar de una descarga agregada, elegir "combinar" desde la
-    pestaña Búsqueda) que requiere tocar el enum `Network` y cómo
-    `DownloadManager` enruta esas operaciones -hoy siempre por un único
-    `download.network`-, deliberadamente fuera del alcance de la v1.
+    cancelar de una descarga agregada -salvo pausar/reanudar si
+    BitTorrent participa, ver la entrada de la fase 2-, elegir
+    "combinar" desde la pestaña Búsqueda), tocando el enum `Network`
+    (`Network.AGGREGATED`) y cómo `DownloadManager` enruta esas
+    operaciones.
 
 ### Punto 43 del backlog: tabla de correlación local de hashes entre redes
 
@@ -7009,3 +7010,199 @@ pasar por la GUI (todavía sin construir, ver más arriba):
 copiado de un resultado de `search` previo. No pasa por
 `DownloadManager` (la v1 no se integra con él), así que no hay
 progreso en vivo por red, solo el resultado final o el error.
+
+### Punto 44 del backlog, fase 2: integración de la descarga agregada con `DownloadManager` y la GUI
+
+Cierra el punto 44 completándolo con lo que la v1 dejaba fuera a
+propósito: que una descarga agregada se pueda lanzar desde la pestaña
+Búsqueda, y que a partir de ahí se comporte como cualquier otra
+descarga de la pestaña Transferencias -pausar, reanudar, cancelar,
+reiniciar, con progreso en vivo- en vez de ser una llamada de una sola
+tacada que solo devuelve el resultado final o el error.
+
+**`Network.AGGREGATED` y `REAL_NETWORKS`** (`core/models.py`): la
+descarga agregada necesitaba encajar en el modelo `Download` existente
+-que siempre cuelga de un único `network`- sin tratarla como una red
+real conectable/buscable más. Se añadió un miembro nuevo
+`Network.AGGREGATED` que representa ese papel de "red virtual", y una
+tupla `REAL_NETWORKS = (TORRENT, SOULSEEK, DCPP, GNUTELLA2, EMULE)`
+para los -numerosos- sitios del código que hacían `for network in
+Network:` esperando solo redes reales conectables (menús de red,
+paneles de estado de conexión, bucles de la pestaña Estadísticas, la
+tabla de descargas, `remote_control.py`...); se auditó todo el árbol
+con `grep -rn "in Network\b" gui/ core/ main.py` para no dejar ninguno
+sin migrar. `AGGREGATED` se trata como "siempre conectada" en
+`DownloadsModel` (no depende de ninguna conexión de red) y tiene su
+propio color morado en `gui/theme.py` y clave de traducción
+`net_aggregated` en los 13 idiomas de `gui/i18n.py`, para que se vea
+igual de bien integrada que las cinco redes reales en la tabla de
+Transferencias.
+
+**`AggregatedDownloadSession`** (`core/aggregated_download.py`): la
+pieza nueva central, un objeto con estado que envuelve las mismas
+primitivas de descarga por rango de la v1 (`download_piece_range`,
+`download_range` de G2 y de eMule) pero como tareas `asyncio`
+cancelables independientes por red en vez de una única llamada
+bloqueante:
+
+- `start()` reparte los rangos igual que hacía `download_aggregated()`
+  en la v1 (`_plan_ranges`, reutilizada) y lanza una tarea por red con
+  `asyncio.ensure_future`.
+- El progreso de cada red se acumula con una fórmula que unifica dos
+  semánticas distintas de los backends: G2 y eMule informan progreso
+  *relativo a la llamada actual* (que puede ser un reinicio tras
+  pausar, empezando ya no en el principio del rango sino en
+  `resume_from`), mientras que BitTorrent informa una posición
+  *absoluta* dentro del torrent pero solo se lanza una vez. La cuenta
+  `self._done_in_range[network] = (start - range_start) +
+  downloaded_in_call` cubre ambos casos con la misma línea.
+- **Pausar/reanudar no está soportado si BitTorrent participa en la
+  combinación** (`pause()`/`resume()` lanzan `AggregatedDownloadError`
+  de inmediato en ese caso) — decisión deliberada, no un descuido:
+  `TorrentBackend.download_piece_range()` libera la sesión de
+  libtorrent (`remove_torrent`) en su `finally` en cuanto se cancela,
+  así que "pausar" un tramo de BitTorrent destruiría la sesión de
+  forma permanente, no la congelaría. **Cancelar sí funciona siempre**,
+  con las tres redes o con cualquier subconjunto, porque cancelar no
+  necesita conservar nada para reanudar después.
+- Semántica "todo o nada" de la v1 conservada: si cualquier tramo real
+  falla, se cancelan los tramos hermanos y toda la descarga agregada
+  pasa a `ERROR` con el motivo del primer fallo.
+- **Bug real encontrado y arreglado durante las pruebas**: la
+  comprobación de "¿ya han terminado todos los tramos, así que toca
+  verificar y cerrar?" al final de cada tramo comparaba `task.done()`
+  de *todas* las tareas, incluida la suya propia -pero una `Task` que
+  envuelve la propia corrutina que está ejecutando esa comprobación
+  nunca puede dar `True` en `.done()` todavía, porque no ha terminado
+  de ejecutarse-, así que la condición nunca se cumplía cuando quedaba
+  un único tramo activo tras un `resume()`, y la descarga se quedaba
+  colgada en `DOWNLOADING` para siempre. Se detectó porque
+  `test_session_pause_mid_transfer_then_resume_completes` se quedaba
+  esperando indefinidamente el estado `COMPLETED`. Arreglado excluyendo
+  la propia red de la comprobación: `all(t.done() for other, t in
+  self._tasks.items() if other != network)`.
+- `encode_combined_source_id()`/`decode_combined_source_id()`: para que
+  una descarga agregada sobreviva un reinicio de la app lo bastante
+  como para poder cancelarla o reiniciarla desde cero, sus fuentes
+  (una por red, cada una un `SearchResult` completo) se serializan a
+  JSON dentro de `Download.source_id` con el prefijo
+  `"aggregated:|||"`.
+
+**`DownloadManager`** (`core/download_manager.py`): las sesiones viven
+solo en memoria, en `self._aggregated_sessions: dict[int,
+AggregatedDownloadSession]` indexadas por `download.id` -se pierden al
+reiniciar la app, a propósito, por la misma razón que una descarga a
+medias de cualquier red no sobrevive un reinicio sin volver a
+conectar-. `start_aggregated_download(sources, dest_path)` es el nuevo
+punto de entrada desde la GUI: crea el `Download` con
+`network=AGGREGATED`, arranca la sesión y la guarda. `pause()`/
+`resume()`/`cancel()`/`delete()`/`restart()` reconocen `AGGREGATED` como
+caso especial y delegan en la sesión guardada en vez de pedirle un
+backend al `BackendRegistry` (que para esta red virtual siempre
+devuelve `None`). Una descarga agregada "huérfana" -sin sesión viva
+porque la app se reinició- todavía se puede cancelar directamente
+contra la base de datos, y reiniciar desde cero
+(`restart(from_scratch=True)`, que decodifica `source_id` de vuelta a
+`SearchResult`s y arranca una sesión nueva desde el byte 0), pero no
+reanudar a medias (`restart(from_scratch=False)` lanza `RuntimeError`
+explicando que solo cabe reiniciar desde cero). De paso se detectó y
+arregló un bug latente: `delete()` no tenía en cuenta `AGGREGATED` y
+como `BackendRegistry.get(Network.AGGREGATED)` es siempre `None`,
+borrar una descarga agregada activa habría dejado su sesión corriendo
+en segundo plano de fondo tras borrar la fila de la base de datos y el
+fichero -arreglado cancelando la sesión explícitamente en ese caso
+antes de borrar-.
+
+**GUI**: en la pestaña Búsqueda, seleccionar dos o más resultados que
+compartan red distinta (comprobado con una tupla local
+`_AGGREGATION_ELIGIBLE_NETWORKS = (TORRENT, GNUTELLA2, EMULE)` en
+`search_tab.py`, para no arrastrar la importación de
+`core.aggregated_download` -y con ella libtorrent- al arranque de la
+pestaña) activa una nueva entrada "Descargar combinado" en el menú
+contextual, que viaja hasta `MainWindow` por la misma cadena de
+señales Qt que ya usaba la descarga normal
+(`combined_download_requested` en `SearchResultsPanel` → relé en
+`SearchTab` → `MainWindow._on_combined_download_requested` →
+`DownloadManager.start_aggregated_download`). En la pestaña
+Transferencias, el menú contextual de una descarga agregada cancelada
+solo ofrece "Reiniciar" (desde cero), no "Iniciar" (que implicaría
+reanudar a medias, no soportado para `AGGREGATED`).
+
+**Validado con 7 tests nuevos** en
+`tests/test_aggregated_download_session.py`: ida y vuelta de
+`encode_combined_source_id`/`decode_combined_source_id`; que
+`pause()`/`resume()` rechazan de inmediato una combinación con
+BitTorrent; pausar a mitad de transferencia y reanudar hasta completar
+-contra un `G2Backend` y un `EMuleBackend` reales por loopback, mismo
+montaje que la v1, con el contenido final verificado byte a byte-;
+cancelar a mitad de transferencia sin que la descarga se reanude sola
+ni llegue nunca a `COMPLETED`; y tres tests de
+`DownloadManager.pause/resume/cancel/restart` enrutando correctamente
+hacia la sesión guardada (con una sesión de mentira) y lanzando
+`RuntimeError` claro tanto al pedir reanudar a medias como al operar
+sobre una descarga agregada huérfana sin sesión viva. Suite completa
+de pytest en verde: 293/293, sin regresiones.
+
+### Punto 44 del backlog, fase 2: dos fallos reales encontrados en revisión posterior
+
+A petición explícita del usuario ("busca posibles fallos o
+incoherencias") se revisó a fondo el código recién completado de la
+fase 2, encontrando dos fallos reales -aparte de un par de
+incoherencias menores sin impacto funcional (auto-reintento/
+auto-verificado no aplican a descargas agregadas porque
+`BackendRegistry.get(Network.AGGREGATED)` es siempre `None`, y la
+columna de pares/fuentes muestra 0/1 en vez del número real de redes
+activas a la vez)-:
+
+1. **`speed_bps` nunca se rellenaba**: `AggregatedDownloadSession.
+   _report_progress()` solo actualizaba `download.downloaded_bytes`,
+   nunca `speed_bps` -las primitivas de descarga por rango
+   (`download_range`/`download_piece_range`) solo informan de bytes,
+   no de velocidad, a diferencia del bucle interno de cada
+   `NetworkBackend` normal, que sí la calcula con una ventana de
+   tiempo-. Exactamente el mismo bug ya encontrado y arreglado antes
+   para Soulseek (ver el estado del proyecto en `CLAUDE.md`), esta vez
+   reintroducido en la descarga agregada: la columna "Velocidad" se
+   habría quedado siempre en blanco. Arreglado añadiendo la misma
+   ventana de 0.5s que ya usan los demás backends
+   (`(downloaded - speed_window_bytes) / elapsed`) dentro de
+   `_report_progress()`, reiniciando la ventana al reanudar (si no, el
+   primer cálculo tras `resume()` mediría contra un `elapsed` que
+   incluye el tiempo entero en pausa) y forzando `speed_bps = 0.0` al
+   pausar, cancelar o terminar (con o sin error), igual que hace cada
+   backend real.
+2. **"Pausar" se ofrecía en el menú -y en "Pausar todo"- para una
+   descarga agregada que incluye BitTorrent, y al pulsarlo fallaba en
+   silencio**: `AggregatedDownloadSession.pause()`/`.resume()`
+   rechazan de plano esa combinación (`AggregatedDownloadError`, ver
+   la entrada de arriba), pero `downloads_tab.py` no lo comprobaba al
+   construir el menú -solo miraba el estado y que la red estuviera
+   "conectada" (`AGGREGATED` lo está siempre)-, y la acción se dispara
+   con `asyncio.ensure_future(self._manager.pause(download))` sin
+   manejo de excepción, así que el error se tragaba sin ningún aviso
+   -mismo patrón que ya se había arreglado antes explícitamente para
+   "pausar con la red desconectada" (ver el comentario de
+   `_PAUSABLE_STATES` en el propio fichero), pero sin aplicar aquí la
+   misma protección-. Arreglado con dos piezas: `encode_combined_
+   source_id()`/`decode_combined_source_id()` se trasladaron de
+   `core/aggregated_download.py` (que arrastra a libtorrent en su
+   cabecera, vía `TorrentBackend`) a `core/models.py` -sin
+   dependencias de backends concretos-, reexportadas tal cual desde su
+   ubicación original para no romper nada que ya las importara de ahí;
+   y una nueva `_aggregated_has_torrent(download)` en
+   `downloads_tab.py` decodifica el `source_id` combinado con esa
+   función ya ligera para saber de antemano si incluye BitTorrent y
+   ocultar "Pausar" en ese caso (`_is_pausable()`, usada tanto al
+   construir el menú como en "Pausar todo").
+
+**Validado con 6 tests nuevos**: uno en `tests/
+test_aggregated_download_session.py` que fuerza determinísticamente
+la ventana de velocidad con un reloj falso (`monkeypatch` sobre
+`core.aggregated_download.time.monotonic`) para comprobar que no
+recalcula dentro de la ventana, que sí lo hace al superarla con el
+valor correcto, y que `pause()` la deja a 0; y cinco en el nuevo
+`tests/test_downloads_tab_aggregated_pause_guard.py` que cubren
+`_aggregated_has_torrent()`/`_is_pausable()` con y sin BitTorrent en
+la combinación, y que no intentan decodificar el `source_id` de una
+descarga normal (no agregada). Suite completa de pytest en verde:
+299/299, sin regresiones.

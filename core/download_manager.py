@@ -28,6 +28,14 @@ class DownloadManager:
         self._verify_listeners: list[Callable[[Download, bool | None, Exception | None], None]] = []
         self._retry_attempts: dict[int, int] = {}  # download.id -> reintentos automáticos ya hechos
         self._auto_verified_ids: set[int] = set()  # download.id ya cubiertos por el auto-verificado (punto 27)
+        # Punto 44 del backlog, fase 2: sesiones de descarga agregada
+        # multired vivas, indexadas por `download.id`. Solo en memoria
+        # a propósito (ver `core/aggregated_download.py`): si la app se
+        # reinicia con una de estas a medias, se pierde la sesión pero
+        # no el registro en la base de datos, que se puede cancelar o
+        # reiniciar desde cero (no reanudar) gracias al `source_id`
+        # combinado persistido.
+        self._aggregated_sessions: dict[int, "AggregatedDownloadSession"] = {}
         for backend in BackendRegistry.all():
             backend.subscribe_progress(self._on_backend_progress)
 
@@ -170,6 +178,36 @@ class DownloadManager:
         download.id = database.insert_download(download)
         return download
 
+    async def start_aggregated_download(
+        self, sources: dict[Network, SearchResult], dest_path: str, category: str | None = None,
+    ) -> Download:
+        """Punto 44 del backlog, fase 2: arranca una descarga combinada
+        de `sources` -resultados del mismo contenido en 2-3 redes
+        elegibles distintas (BitTorrent/Gnutella2/eMule)- como una
+        única entrada de `Network.AGGREGATED` en Transferencias. El
+        motor real vive en `core.aggregated_download`, importado aquí
+        mismo (no en la cabecera del módulo) para no acoplar
+        `DownloadManager` -hasta ahora agnóstico de backends
+        concretos- a libtorrent/G2/eMule solo por este caso."""
+        from core.aggregated_download import create_aggregated_session
+
+        title = next(iter(sources.values())).title
+        download = Download(
+            id=None, network=Network.AGGREGATED, title=title, source_id="",
+            dest_path=dest_path, size_bytes=next(iter(sources.values())).size_bytes,
+            category=category, state=DownloadState.SEARCHING_SOURCES,
+        )
+        session = await create_aggregated_session(
+            download, sources, dest_path,
+            torrent_backend=BackendRegistry.get(Network.TORRENT),
+            g2_backend=BackendRegistry.get(Network.GNUTELLA2),
+            emule_backend=BackendRegistry.get(Network.EMULE),
+            on_progress=self._on_backend_progress,
+        )
+        download.id = database.insert_download(download)
+        self._aggregated_sessions[download.id] = session
+        return download
+
     async def create_torrent(
         self,
         source_path: str,
@@ -207,6 +245,9 @@ class DownloadManager:
                 pass
 
     async def pause(self, download: Download) -> None:
+        if download.network == Network.AGGREGATED:
+            await self._aggregated_session_or_raise(download).pause()
+            return
         # Bug real reportado por el usuario: pulsar "Pausar" en una
         # descarga cuya red no está conectada no hacía nada visible -sin
         # este guardián, `backend` es `None` y `None.pause_download(...)`
@@ -219,16 +260,41 @@ class DownloadManager:
         await backend.pause_download(download)
 
     async def resume(self, download: Download) -> None:
+        if download.network == Network.AGGREGATED:
+            await self._aggregated_session_or_raise(download).resume()
+            return
         backend = BackendRegistry.get(download.network)
         if backend is None:
             raise RuntimeError(f"La red {download.network.value} no está conectada")
         await backend.resume_download(download)
 
     async def cancel(self, download: Download) -> None:
+        if download.network == Network.AGGREGATED:
+            session = self._aggregated_sessions.pop(download.id, None)
+            if session is not None:
+                await session.cancel()
+            else:
+                # Sesión huérfana (p.ej. tras reiniciar la app, ver el
+                # docstring de `core.aggregated_download`): no hay nada
+                # que cancelar en memoria, pero sí se puede marcar el
+                # registro persistido como cancelado.
+                download.state = DownloadState.CANCELLED
+                if download.id is not None:
+                    database.update_download_progress(download.id, download.downloaded_bytes, download.state)
+            return
         backend = BackendRegistry.get(download.network)
         if backend is None:
             raise RuntimeError(f"La red {download.network.value} no está conectada")
         await backend.cancel_download(download)
+
+    def _aggregated_session_or_raise(self, download: Download) -> "AggregatedDownloadSession":
+        session = self._aggregated_sessions.get(download.id)
+        if session is None:
+            raise RuntimeError(
+                "Esta descarga agregada no tiene una sesión activa (seguramente por haber reiniciado la "
+                "aplicación) — puedes cancelarla y reiniciarla desde cero, pero no reanudarla a medias"
+            )
+        return session
 
     async def restart(self, download: Download, from_scratch: bool = False) -> None:
         """Reengancha una descarga cancelada, reutilizando exactamente el
@@ -241,7 +307,22 @@ class DownloadManager:
         quedó (cancelar ya no borra archivos, ver
         `NetworkBackend.cancel_download`); con `from_scratch=True`
         ("Reiniciar") se borra antes ese contenido y se pone
-        `downloaded_bytes` a 0, para empezar de cero."""
+        `downloaded_bytes` a 0, para empezar de cero.
+
+        Las descargas agregadas (`Network.AGGREGATED`, punto 44 fase 2)
+        no guardan progreso por red entre sesiones -viven solo en
+        memoria, ver `core.aggregated_download`-, así que aquí solo se
+        admite `from_scratch=True`: reconstruye las fuentes desde el
+        `source_id` combinado persistido y arranca una sesión nueva
+        desde el byte 0."""
+        if download.network == Network.AGGREGATED:
+            if not from_scratch:
+                raise RuntimeError(
+                    "Una descarga agregada no se puede reanudar a medias tras perder su sesión — "
+                    "usa \"Reiniciar\" para empezarla de cero"
+                )
+            await self._restart_aggregated_from_scratch(download)
+            return
         backend = BackendRegistry.get(download.network)
         if backend is None:
             raise RuntimeError(f"La red {download.network.value} no está conectada")
@@ -257,6 +338,41 @@ class DownloadManager:
             database.update_download_progress(download.id, download.downloaded_bytes, download.state)
             self._retry_attempts.pop(download.id, None)
         await backend.reattach_download(download)
+
+    async def _restart_aggregated_from_scratch(self, download: Download) -> None:
+        from core.aggregated_download import create_aggregated_session
+        from core.models import decode_combined_source_id
+
+        old_session = self._aggregated_sessions.pop(download.id, None)
+        if old_session is not None:
+            try:
+                await old_session.cancel()
+            except Exception:
+                pass
+
+        target = Path(download.dest_path) / download.title
+        if target.is_dir():
+            shutil.rmtree(target, ignore_errors=True)
+        elif target.is_file():
+            target.unlink(missing_ok=True)
+        download.downloaded_bytes = 0
+        download.state = DownloadState.SEARCHING_SOURCES
+        download.error_message = None
+        if download.id is not None:
+            database.update_download_progress(download.id, download.downloaded_bytes, download.state)
+            self._retry_attempts.pop(download.id, None)
+
+        sources = decode_combined_source_id(download.source_id)
+        session = await create_aggregated_session(
+            download, sources, download.dest_path,
+            torrent_backend=BackendRegistry.get(Network.TORRENT),
+            g2_backend=BackendRegistry.get(Network.GNUTELLA2),
+            emule_backend=BackendRegistry.get(Network.EMULE),
+            on_progress=self._on_backend_progress,
+        )
+        self._aggregated_sessions[download.id] = session
+        if download.id is not None:
+            database.update_download_progress(download.id, download.downloaded_bytes, download.state)
 
     def set_download_limit(self, download: Download, rate_bps: int) -> None:
         backend = BackendRegistry.get(download.network)
@@ -373,12 +489,20 @@ class DownloadManager:
         historial y elimina del disco lo que se hubiera llegado a
         descargar (fichero o carpeta, según el backend)."""
         if download.state in _ACTIVE_STATES:
-            backend = BackendRegistry.get(download.network)
-            if backend is not None:
-                try:
-                    await backend.cancel_download(download)
-                except Exception:
-                    pass
+            if download.network == Network.AGGREGATED:
+                session = self._aggregated_sessions.pop(download.id, None)
+                if session is not None:
+                    try:
+                        await session.cancel()
+                    except Exception:
+                        pass
+            else:
+                backend = BackendRegistry.get(download.network)
+                if backend is not None:
+                    try:
+                        await backend.cancel_download(download)
+                    except Exception:
+                        pass
         if download.id is not None:
             database.delete_download(download.id)
             self._retry_attempts.pop(download.id, None)
@@ -421,7 +545,11 @@ class DownloadManager:
     def _on_backend_progress(self, download: Download) -> None:
         if download.id is not None:
             database.update_download_progress(download.id, download.downloaded_bytes, download.state)
-        stats_tracker.record_download_progress(download)
+        # Red virtual, sin conexión/sesión real detrás: no tiene sentido
+        # escribir una fila "aggregated" en `network_stats`/
+        # `network_stats_daily` (punto 44, fase 2 — ver core/models.py).
+        if download.network != Network.AGGREGATED:
+            stats_tracker.record_download_progress(download)
         if download.state == DownloadState.ERROR:
             self._maybe_auto_retry(download)
         elif download.state == DownloadState.COMPLETED:

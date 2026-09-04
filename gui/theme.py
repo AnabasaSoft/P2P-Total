@@ -23,6 +23,7 @@ NETWORK_COLORS = {
     Network.DCPP: "#27ae60",        # verde
     Network.GNUTELLA2: "#16a085",   # verde azulado
     Network.EMULE: "#e0b30f",       # amarillo/dorado
+    Network.AGGREGATED: "#9b59b6",  # morado, distinto de las cinco redes reales (punto 44, fase 2)
 }
 
 # Mismo "piloto" de color por estado de conexión que usaba el antiguo

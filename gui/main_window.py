@@ -17,7 +17,7 @@ from backends.emule_backend import parse_ed2k_link
 from core.backend_base import BackendRegistry
 from core.bandwidth_scheduler import BandwidthScheduler
 from core.config import load_config, save_config
-from core.models import Download, DownloadState, Network, SearchResult
+from core.models import REAL_NETWORKS, Download, DownloadState, Network, SearchResult
 from core.download_manager import DownloadManager
 from core.http_client import http_download
 from core.remote_control import RemoteControlServer
@@ -77,6 +77,7 @@ class MainWindow(QMainWindow):
 
         self._search_tab = SearchTab(self._download_manager, self._connection_manager, self._saved_search_manager)
         self._search_tab.download_requested.connect(self._on_download_requested)
+        self._search_tab.combined_download_requested.connect(self._on_combined_download_requested)
         self._downloads_tab = DownloadsTab(self._download_manager, self._connection_manager)
         self._network_tab = NetworkTab(self._connection_manager, self._download_manager)
         self._network_tab.download_requested.connect(self._on_download_requested)
@@ -198,7 +199,7 @@ class MainWindow(QMainWindow):
 
         networks_menu = menu_bar.addMenu(t("menu_networks"))
         self._network_actions: dict[Network, QAction] = {}
-        for network in Network:
+        for network in REAL_NETWORKS:
             action = QAction(t(NETWORK_LABEL_KEYS[network]), self, checkable=True)
             action.toggled.connect(lambda checked, n=network: self._on_network_toggled(n, checked))
             self._network_actions[network] = action
@@ -393,12 +394,12 @@ class MainWindow(QMainWindow):
             asyncio.ensure_future(self._connection_manager.disconnect_network(network))
 
     def _on_connect_all(self) -> None:
-        for network in Network:
+        for network in REAL_NETWORKS:
             if not self._connection_manager.is_connected(network):
                 asyncio.ensure_future(self._connection_manager.connect_network(network))
 
     def _on_disconnect_all(self) -> None:
-        for network in Network:
+        for network in REAL_NETWORKS:
             if self._connection_manager.is_connected(network):
                 asyncio.ensure_future(self._connection_manager.disconnect_network(network))
 
@@ -421,7 +422,7 @@ class MainWindow(QMainWindow):
 
     def _on_status_changed_for_statusbar(self, _network_value: str, _status: str, _message: str) -> None:
         n_connected = len(self._connection_manager.connected_networks())
-        self.statusBar().showMessage(t("statusbar_connected_count", n=n_connected, total=len(Network)))
+        self.statusBar().showMessage(t("statusbar_connected_count", n=n_connected, total=len(REAL_NETWORKS)))
 
     def _on_progress_for_statusbar(self, _download: Download) -> None:
         n_active = self._downloads_tab.active_count()
@@ -539,6 +540,22 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentWidget(self._downloads_tab)
         if download.network == Network.TORRENT:
             await self._maybe_show_torrent_file_selection(download)
+
+    def _on_combined_download_requested(self, sources, dest_path: str) -> None:
+        asyncio.ensure_future(self._start_combined_download(sources, dest_path))
+
+    async def _start_combined_download(self, sources, dest_path: str) -> None:
+        """Punto 44 del backlog, fase 2: arranca desde la pestaña de
+        Búsqueda ("Descargar combinado") una descarga agregada
+        multired, exactamente igual que `_start_download` pero
+        delegando en `DownloadManager.start_aggregated_download`."""
+        try:
+            download = await self._download_manager.start_aggregated_download(sources, dest_path)
+        except Exception as e:
+            QMessageBox.warning(self, t("app_title"), str(e))
+            return
+        self._downloads_tab.add_download(download)
+        self._tabs.setCurrentWidget(self._downloads_tab)
 
     async def _maybe_show_torrent_file_selection(self, download: Download) -> None:
         """Al añadir un torrent con más de un archivo, se abre siempre el

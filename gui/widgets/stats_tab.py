@@ -12,7 +12,7 @@ from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import QHeaderView, QLabel, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget
 
 from core import database
-from core.models import Network
+from core.models import REAL_NETWORKS, Network
 from core.stats_tracker import stats_tracker
 from gui.connection_manager import ConnectionManager
 from gui.i18n import t
@@ -78,7 +78,7 @@ class StatsTab(QWidget):
         layout.addWidget(self._totals_table)
 
         self._rows: dict[Network, int] = {}
-        for row, network in enumerate(Network):
+        for row, network in enumerate(REAL_NETWORKS):
             self._rows[network] = row
             self._init_totals_row(row, network)
 

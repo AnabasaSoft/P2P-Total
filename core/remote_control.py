@@ -26,7 +26,7 @@ import re
 from urllib.parse import parse_qs, urlparse
 
 from core.config import load_config
-from core.models import Network
+from core.models import REAL_NETWORKS, Network
 
 _MAX_HEADER_BYTES = 16 * 1024
 _MAX_BODY_BYTES = 1024 * 1024  # de sobra para un cuerpo JSON de esta API
@@ -160,7 +160,7 @@ class RemoteControlServer:
             return
 
         if method == "GET" and path == "/api/networks":
-            statuses = {n.value: self._connection_manager.status(n) for n in Network}
+            statuses = {n.value: self._connection_manager.status(n) for n in REAL_NETWORKS}
             await self._respond_json(writer, 200, statuses)
             return
 

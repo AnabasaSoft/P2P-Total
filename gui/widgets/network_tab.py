@@ -29,7 +29,7 @@ from gui.widgets.accessible_table import AccessibleTableWidget
 from gui.widgets.browse_host_dialog import BrowseHostDialog
 from gui.widgets.hub_list_dialog import HubListDialog
 from gui.widgets.known_servers_dialog import KnownServersDialog
-from core.models import Network
+from core.models import REAL_NETWORKS, Network
 
 # Redes con un concepto real de "servidor/hub conocido al que elegir
 # conectarse" -Soulseek solo tiene un servidor central real y
@@ -212,7 +212,7 @@ class NetworkTab(QWidget):
         layout.addWidget(self._tabs)
 
         self._pages: dict[Network, _NetworkPage] = {}
-        for network in Network:
+        for network in REAL_NETWORKS:
             page = _NetworkPage(network)
             self._pages[network] = page
             self._tabs.addTab(page, t(NETWORK_LABEL_KEYS[network]))

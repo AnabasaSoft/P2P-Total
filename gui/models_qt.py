@@ -8,7 +8,7 @@ from PyQt6.QtCore import QAbstractTableModel, QMimeData, QModelIndex, QSortFilte
 
 from gui.i18n import t
 from gui.theme import NETWORK_COLORS
-from core.models import Download, DownloadState, Network, SearchResult
+from core.models import REAL_NETWORKS, Download, DownloadState, Network, SearchResult
 
 STATE_LABEL_KEYS = {
     DownloadState.QUEUED: "state_queued",
@@ -38,6 +38,7 @@ NETWORK_LABEL_KEYS = {
     Network.DCPP: "net_dcpp",
     Network.GNUTELLA2: "net_gnutella2",
     Network.EMULE: "net_emule",
+    Network.AGGREGATED: "net_aggregated",
 }
 
 
@@ -167,7 +168,12 @@ class DownloadsModel(QAbstractTableModel):
         # lanza después, ver `ConnectionManager.autoconnect_configured_
         # networks`), así que hasta que llegue el primer aviso real de
         # conexión hay que asumir que ninguna lo está.
-        self._connected: dict[Network, bool] = {n: False for n in Network}
+        # `Network.AGGREGATED` no es una red real conectable (punto 44,
+        # fase 2, ver core/models.py): se marca "conectada" siempre para
+        # que sus descargas nunca se traten como huérfanas de conexión
+        # -nadie llama nunca a `set_network_connected(AGGREGATED, ...)`-.
+        self._connected: dict[Network, bool] = {n: False for n in REAL_NETWORKS}
+        self._connected[Network.AGGREGATED] = True
 
     def set_network_connected(self, network: Network, connected: bool) -> None:
         if self._connected.get(network) == connected:

@@ -16,7 +16,7 @@ from PyQt6.QtWidgets import (
 from core.config import Category, load_config
 from core.download_manager import DownloadManager
 from core.file_types import matches_file_type
-from core.models import Network, SearchResult
+from core.models import REAL_NETWORKS, Network, SearchResult
 from core.saved_search_manager import SavedSearchManager
 from gui.connection_manager import ConnectionManager, STATUS_CONNECTED
 from gui.i18n import t
@@ -25,6 +25,13 @@ from gui.widgets.accessible_table import AccessibleTableView
 from gui.widgets.browse_user_dialog import BrowseUserDialog
 
 _TAB_TITLE_MAX_LEN = 20
+
+# Duplica a propósito `core.aggregated_download._ELIGIBLE_NETWORKS`
+# (punto 44, fase 2): esa constante vive en un módulo que importa
+# `TorrentBackend`/`G2Backend`/`EMuleBackend` -y con ellos libtorrent-
+# a nivel de módulo, y esta pestaña no quiere pagar ese coste solo para
+# decidir si mostrar "Descargar combinado" en el menú contextual.
+_AGGREGATION_ELIGIBLE_NETWORKS = (Network.TORRENT, Network.GNUTELLA2, Network.EMULE)
 
 _FILE_TYPE_ORDER = ["all", "archive", "audio", "cdimage", "picture", "program", "document", "video"]
 _FILE_TYPE_LABEL_KEYS = {
@@ -45,6 +52,9 @@ class SearchResultsPanel(QWidget):
     búsqueda. Se crea una instancia nueva por cada búsqueda lanzada."""
 
     download_requested = pyqtSignal(object, str, object)  # SearchResult, dest_path, category (str | None)
+    # Punto 44 del backlog, fase 2: dict[Network, SearchResult] (2-3
+    # redes elegibles distintas del mismo contenido), dest_path.
+    combined_download_requested = pyqtSignal(object, str)
 
     def __init__(self, manager: DownloadManager, parent=None) -> None:
         super().__init__(parent)
@@ -247,6 +257,10 @@ class SearchResultsPanel(QWidget):
             single_result = self._model.result_at(selected_rows[0])
             if single_result.network == Network.SOULSEEK and single_result.extra.get("username"):
                 browse_action = menu.addAction(t("ctx_browse_user"))
+        combined_sources = self._combinable_sources(selected_rows)
+        combined_download_action = None
+        if combined_sources is not None:
+            combined_download_action = menu.addAction(t("ctx_download_combined"))
 
         self._menu_open = True
         try:
@@ -278,6 +292,36 @@ class SearchResultsPanel(QWidget):
             dialog = BrowseUserDialog(self._manager, result.extra["username"], self)
             dialog.download_requested.connect(self.download_requested.emit)
             dialog.exec()
+        elif action == combined_download_action:
+            self._download_combined(combined_sources)
+
+    def _combinable_sources(self, selected_rows: list[int]) -> dict[Network, SearchResult] | None:
+        """`None` si la selección actual no es combinable (punto 44,
+        fase 2): hacen falta al menos dos filas, todas de redes
+        elegibles para agregación y todas de redes distintas entre sí
+        -no hace falta comprobar aquí que el tamaño coincide, eso ya lo
+        valida `DownloadManager.start_aggregated_download()` antes de
+        arrancar nada-."""
+        if len(selected_rows) < 2:
+            return None
+        sources: dict[Network, SearchResult] = {}
+        for row in selected_rows:
+            result = self._model.result_at(row)
+            if result.network not in _AGGREGATION_ELIGIBLE_NETWORKS or result.network in sources:
+                return None
+            sources[result.network] = result
+        return sources
+
+    def _download_combined(self, sources: dict[Network, SearchResult]) -> None:
+        dest_dir = load_config().default_download_dir
+        try:
+            Path(dest_dir).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            QMessageBox.warning(
+                self, t("app_title"), t("msg_download_dir_error", dir=dest_dir, error=str(exc))
+            )
+            return
+        self.combined_download_requested.emit(sources, dest_dir)
 
     def _flush_pending_results(self) -> None:
         had_pending = bool(self._pending_results)
@@ -316,6 +360,7 @@ class SearchResultsPanel(QWidget):
 
 class SearchTab(QWidget):
     download_requested = pyqtSignal(object, str, object)  # SearchResult, dest_path, category (str | None)
+    combined_download_requested = pyqtSignal(object, str)  # dict[Network, SearchResult], dest_path
 
     def __init__(self, download_manager: DownloadManager, connection_manager: ConnectionManager,
                  saved_search_manager: SavedSearchManager, parent=None) -> None:
@@ -352,7 +397,7 @@ class SearchTab(QWidget):
         filter_row = QHBoxLayout()
         filter_row.addWidget(QLabel(t("lbl_networks_filter")))
         self._network_checks: dict[Network, QCheckBox] = {}
-        for network in Network:
+        for network in REAL_NETWORKS:
             box = QCheckBox(t(NETWORK_LABEL_KEYS[network]))
             box.setEnabled(False)
             self._network_checks[network] = box
@@ -414,6 +459,7 @@ class SearchTab(QWidget):
 
         panel = SearchResultsPanel(self._manager, self)
         panel.download_requested.connect(self.download_requested.emit)
+        panel.combined_download_requested.connect(self.combined_download_requested.emit)
         index = self._results_tabs.addTab(panel, self._tab_title(query))
         self._results_tabs.setTabToolTip(index, query)
         self._results_tabs.setCurrentIndex(index)
