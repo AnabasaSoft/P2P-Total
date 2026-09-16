@@ -37,4 +37,16 @@ COMMON_ARGS=(
 )
 
 fpm -t deb -p "$ROOT_DIR/p2p-total_${VERSION}_amd64.deb" "${COMMON_ARGS[@]}"
-fpm -t rpm -p "$ROOT_DIR/p2p-total-${VERSION}-1.x86_64.rpm" "${COMMON_ARGS[@]}"
+
+# Los binarios que empaqueta PyInstaller (libpython, Qt, etc.) son idénticos
+# byte a byte a los que empaquetan otras apps propias construidas igual, así
+# que comparten build-id ELF. rpmbuild genera por defecto un symlink en
+# /usr/lib/.build-id/<hash> por cada binario, y como el nombre de ese symlink
+# sale del build-id (no del nombre del paquete), dos paquetes distintos con
+# el mismo binario intentan poseer el mismo fichero y el rpm resultante
+# choca con "file ... conflicts with file from package" al instalar junto a
+# esas otras apps. Se desactiva esa generación porque no publicamos rpms de
+# debuginfo y no aporta nada aquí.
+fpm -t rpm -p "$ROOT_DIR/p2p-total-${VERSION}-1.x86_64.rpm" \
+    --rpm-rpmbuild-define "_build_id_links none" \
+    "${COMMON_ARGS[@]}"

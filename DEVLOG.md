@@ -7206,3 +7206,38 @@ valor correcto, y que `pause()` la deja a 0; y cinco en el nuevo
 la combinación, y que no intentan decodificar el `source_id` de una
 descarga normal (no agregada). Suite completa de pytest en verde:
 299/299, sin regresiones.
+
+### Arreglo: el .rpm de openSUSE chocaba con el de otra app propia por `/usr/lib/.build-id/...`
+
+Bug real reportado por el usuario al instalar el `.rpm` en su openSUSE:
+`rpm` rechazaba la instalación con `File /usr/lib/.build-id/59/f70...
+from install of p2p-total-1.0.20-1.x86_64 conflicts with file from
+package mantpro-2.7.3-1.x86_64`, otra app propia suya empaquetada de
+forma equivalente (PyInstaller onedir + `fpm`).
+
+Causa: `packaging/linux/build-linux-packages.sh` empaqueta el build
+"onedir" de PyInstaller con `fpm -s dir -t rpm` (sin `.spec` propio de
+`rpmbuild` -el `packaging/p2p-total.spec` del repo es el spec de
+PyInstaller, código Python, no de RPM-, fpm genera uno interno al
+vuelo). Por defecto `rpmbuild` crea, para cada binario ELF empaquetado,
+un symlink en `/usr/lib/.build-id/<build-id>` cuyo nombre sale del
+build-id embebido por el enlazador (no del nombre del paquete). Como
+ambas apps empaquetan binarios/bibliotecas compartidas idénticas byte
+a byte (mismo intérprete/Qt bundleados por PyInstaller desde el mismo
+sistema), su build-id coincide, y los dos paquetes intentan poseer el
+mismo nombre de fichero con un destino de symlink distinto (apunta al
+binario dentro de cada paquete) -de ahí el conflicto al instalar uno
+encima del otro, en vez de poder coexistir-.
+
+Arreglado pasando `--rpm-rpmbuild-define "_build_id_links none"` solo
+a la invocación de `fpm -t rpm` (el `.deb` no pasa por `rpmbuild`, no
+le afecta), que desactiva por completo la generación de esos symlinks
+-no se publican `.rpm` de debuginfo, así que no aportan nada aquí-.
+Sin tests automatizados posibles (es un detalle de cómo `rpmbuild`
+postprocesa el `.rpm` final, no de código Python del proyecto);
+validado leyendo el mecanismo de `rpmbuild`/`fpm` y la semántica exacta
+de la macro `_build_id_links` (`none`/`alldebug`/`compat`/`separate`).
+Pendiente de una repaquetización real (`build-linux-packages.sh`) para
+confirmar en vivo que el `.rpm` regenerado ya no choca -el `.rpm` que
+el usuario ya tiene descargado sigue afectado; necesita reinstalarse
+desde una build nueva-.
